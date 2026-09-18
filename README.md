@@ -1,0 +1,140 @@
+# Hearth
+
+A local-first personal assistant. An orchestrator routes each turn to a specialist agent
+working over my own data. Everything runs on my machine.
+
+The rules that govern this codebase are in [CLAUDE.md](CLAUDE.md) — several of them are
+inviolable rather than preferred. The phase plan is in [docs/plan.md](docs/plan.md).
+
+**Status: Phase 0 (scaffold).** No model, no database schema, no agents yet. The LLM
+arrives at Phase 4; the data layer and query tools come first, because that is where
+correctness lives.
+
+## Prerequisites
+
+- Python 3.12. If you do not have one, `uv python install 3.12` provides it
+  without sudo or Homebrew; make sure the shim directory (`~/.local/bin`) is on
+  your PATH, or point the Makefile at it with `make PYTHON=/full/path/to/python3.12`.
+- Node 20.19+ or 22.12+ (Vite 7's floor)
+- Docker with Compose v2
+- [LM Studio](https://lmstudio.ai) serving an OpenAI-compatible endpoint on
+  `http://localhost:1234/v1` — not needed until Phase 4
+
+The hardware target is an RTX 4060 Ti with **8GB of VRAM**, shared between the chat model
+and the embedding model. Nothing larger than ~8B at Q4 fits. The 8,192-token context
+window, not disk or RAM, is the scarce resource.
+
+**Hearth is developed on a Mac and hosted on the RTX 4060 Ti machine.** The data layer,
+ingestion and query tools are ordinary portable software and are built on either. Anything
+model-dependent is only meaningful on the host: the Phase 4 smoke test, and every eval
+pass rate. A pass rate measured anywhere else does not characterise the target, and
+`make freeze` produces a lockfile for one machine's architecture, not both.
+
+## Setup
+
+```bash
+cp .env.example .env     # then fill it in — see below
+make install             # creates .venv, installs both toolchains
+make up                  # Postgres + SearXNG, both bound to 127.0.0.1
+make dev                 # infrastructure + backend + frontend
+```
+
+`make dev` serves the API on `http://localhost:8000` and the UI on
+`http://localhost:5173`. The UI reaches the API through Vite's dev proxy, so the two share
+an origin and there is no CORS layer to configure.
+
+Check the backend directly:
+
+```bash
+curl http://localhost:8000/health
+```
+
+### Filling in `.env`
+
+Most of it is local connection details. Two entries deserve attention:
+
+- **`SEARXNG_SECRET`** — generate with `openssl rand -hex 32`. SearXNG will not start
+  without it.
+- **`CHAT_MODEL` and `EMBEDDING_MODEL`** — the model ids LM Studio reports. There are no
+  defaults in code, deliberately: a default model name in Python is a hardcoded model
+  name, and these change. The inference layer refuses to start without them; the API and
+  `/health` do not depend on them.
+
+`.env` is gitignored and is never read into an assistant session.
+
+## Models
+
+Both model names are read from the environment and never hardcoded. Assume they change.
+
+**The embedding model is pinned.** Changing `EMBEDDING_MODEL` invalidates every vector in
+the database — a different model produces a different space, and old vectors are not
+comparable to new ones. Changing it means re-embedding everything, so treat it as a
+migration rather than a config tweak. The candidates on the table for Phase 10 are
+`nomic-embed-text` and `bge-small-en-v1.5`; record the choice here when it is made.
+
+Record the chat model here too once it settles, so an eval pass rate in
+`evals/results/` can be attributed to a model rather than to a vibe.
+
+| Role | Env var | Value |
+|---|---|---|
+| Chat | `CHAT_MODEL` | *not yet chosen* |
+| Embedding | `EMBEDDING_MODEL` | *not yet chosen — blocks Phase 10* |
+
+## Commands
+
+```bash
+make dev          # docker compose up + backend + frontend
+make migrate      # alembic upgrade head              (Phase 1)
+make seed         # load the golden fixture dataset   (Phase 1)
+make test         # pytest
+make eval         # run the behavioural case file     (Phase 7)
+make lint         # ruff + mypy + tsc
+```
+
+Also available: `make up` / `make down` / `make logs` for infrastructure alone, `make fmt`
+to apply formatting, `make freeze` to resolve `requirements.txt`'s ranges into exact pins,
+and `make clean` to remove both toolchains.
+
+The commands whose phase has not landed fail with a message saying so rather than a
+stack trace.
+
+TypeScript types are generated from the API's OpenAPI schema, not written by hand. With
+the backend running:
+
+```bash
+npm --prefix web run gen:types
+```
+
+## Layout
+
+```
+api/          FastAPI app. Phase 0 serves /health.
+config.py     Environment configuration, split so the API boots without a model server.
+steward/      The orchestrator. Routes each turn to a specialist.      (Phase 6)
+agents/       Tally (finance, Phase 5) and Forge (fitness, Phase 11).
+tools/        Query and compute functions, and Errand.                 (Phases 3, 9)
+prompts/      Agent prompts as version-controlled Markdown, never inline literals.
+db/           Schema, sessions, the read-only role.                    (Phase 1)
+evals/        Behavioural case file and recorded pass rates.           (Phase 7)
+tests/        Pytest. Tests come before agent code in the data and tool layers.
+web/          React + TypeScript + Vite.
+docker/       Postgres init and SearXNG configuration.
+```
+
+## Data
+
+Real CSVs live outside this repo, at `$HEARTH_DATA_DIR`. They are never created, copied or
+pasted into the workspace. Fixtures in the repo are fake, and the golden dataset used by
+`make seed` and `make eval` contains invented figures only.
+
+Data enters through CSV import or manual entry, triggered by hand. There are no live
+financial connections, and there will not be.
+
+## What leaves the machine
+
+Nothing, with one exception: Errand's search queries reach a self-hosted SearXNG instance,
+which then queries the public web. Every such query passes `validate_search_query()` and is
+logged to the `search_audit` table, with a view in the UI (Phase 9).
+
+There is no third-party telemetry anywhere — no analytics, no error reporting,
+`LANGCHAIN_TRACING_V2=false`.

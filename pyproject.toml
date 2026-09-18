@@ -1,0 +1,32 @@
+# Hearth is an application, not a library: dependencies live in requirements*.txt
+# and this file carries tool configuration only. Nothing is pip-installed from
+# the repo, so there is no build backend and no editable install to go stale.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["web", ".venv", "migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["api", "config.py", "tests"]
+exclude = "(^|/)(\\.venv|web|migrations/versions)/"
+
+[[tool.mypy.overrides]]
+module = ["searx.*", "langchain_mcp_adapters.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+# Flat layout: the repo root is the import root, so tests import `api`, `tools`
+# and friends the same way the running app does.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+  "slow: hits a real model or container; excluded from the default run",
+]

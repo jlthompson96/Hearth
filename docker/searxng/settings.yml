@@ -1,0 +1,26 @@
+# Errand is the only part of Hearth that leaves the house. This is the door.
+use_default_settings: true
+
+general:
+  instance_name: "Hearth"
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+server:
+  bind_address: "0.0.0.0"     # inside the container; the port is bound to 127.0.0.1
+  port: 8080
+  secret_key: "ultrasecretkey"  # replaced at startup from SEARXNG_SECRET
+  limiter: false                # private, single user — see limiter.toml
+  public_instance: false
+  image_proxy: false
+
+search:
+  # SearXNG serves HTML only by default. Without json here, every Errand
+  # request comes back 403. Restart the container after changing this.
+  formats:
+    - html
+    - json
+
+ui:
+  static_use_hash: true

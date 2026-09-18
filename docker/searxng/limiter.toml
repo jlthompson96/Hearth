@@ -1,0 +1,17 @@
+# Only consulted when server.limiter is true in settings.yml. It is false today,
+# but this file is written now because the default bot detection throttles
+# exactly the kind of client Errand is, and rediscovering that in Phase 9 costs
+# an evening. Relaxing it is safe: the instance is private and localhost-bound.
+
+[real_ip]
+x_for = 1
+ipv4_prefix = 32
+ipv6_prefix = 56
+
+[botdetection.ip_limit]
+# The link-token method rejects any client that did not render the page first,
+# which means every programmatic search.
+link_token = false
+
+[botdetection.ip_lists]
+pass_ip = ["127.0.0.0/8", "::1", "10.0.0.0/8", "192.168.0.0/16"]
