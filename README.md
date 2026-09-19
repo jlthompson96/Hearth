@@ -6,9 +6,9 @@ working over my own data. Everything runs on my machine.
 The rules that govern this codebase are in [CLAUDE.md](CLAUDE.md) — several of them are
 inviolable rather than preferred. The phase plan is in [docs/plan.md](docs/plan.md).
 
-**Status: Phase 0 (scaffold).** No model, no database schema, no agents yet. The LLM
-arrives at Phase 4; the data layer and query tools come first, because that is where
-correctness lives.
+**Status: Phase 1 (data layer).** Schema, migrations, the read-only role and the golden
+fixture are in place. No model and no agents yet — the LLM arrives at Phase 4. The data
+layer and query tools come first, because that is where correctness lives.
 
 ## Prerequisites
 
@@ -84,8 +84,8 @@ Record the chat model here too once it settles, so an eval pass rate in
 
 ```bash
 make dev          # docker compose up + backend + frontend
-make migrate      # alembic upgrade head              (Phase 1)
-make seed         # load the golden fixture dataset   (Phase 1)
+make migrate      # alembic upgrade head
+make seed         # load the golden fixture dataset
 make test         # pytest
 make eval         # run the behavioural case file     (Phase 7)
 make lint         # ruff + mypy + tsc
@@ -114,7 +114,9 @@ steward/      The orchestrator. Routes each turn to a specialist.      (Phase 6)
 agents/       Tally (finance, Phase 5) and Forge (fitness, Phase 11).
 tools/        Query and compute functions, and Errand.                 (Phases 3, 9)
 prompts/      Agent prompts as version-controlled Markdown, never inline literals.
-db/           Schema, sessions, the read-only role.                    (Phase 1)
+db/           Schema and shared column types. NUMERIC throughout.
+migrations/   Alembic. Tables, the snapshot_coverage view, the read-only role.
+scripts/      seed.py — the golden fixture. Invented figures only.
 evals/        Behavioural case file and recorded pass rates.           (Phase 7)
 tests/        Pytest. Tests come before agent code in the data and tool layers.
 web/          React + TypeScript + Vite.
@@ -122,6 +124,12 @@ docker/       Postgres init and SearXNG configuration.
 ```
 
 ## Data
+
+`make seed` loads the golden fixture: four accounts over 2024, with coverage deliberately
+uneven — the brokerage account opens in March, and one month of retirement data is missing,
+as though an export skipped it. A fixture where every account has every month would let a
+net worth trend look right while the coverage handling underneath it was broken. `make seed`
+refuses to run if imported data is present unless passed `--force`.
 
 Real CSVs live outside this repo, at `$HEARTH_DATA_DIR`. They are never created, copied or
 pasted into the workspace. Fixtures in the repo are fake, and the golden dataset used by

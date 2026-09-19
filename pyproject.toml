@@ -14,7 +14,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "N"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["api", "config.py", "tests"]
+files = ["api", "config.py", "db", "scripts", "tests"]
 exclude = "(^|/)(\\.venv|web|migrations/versions)/"
 
 [[tool.mypy.overrides]]
