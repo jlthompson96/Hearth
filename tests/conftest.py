@@ -103,9 +103,14 @@ def engine(_test_database: tuple[URL, URL]) -> Iterator[Engine]:
 
 @pytest.fixture(scope="session")
 def ro_engine(_test_database: tuple[URL, URL]) -> Iterator[Engine]:
-    """The role the query tools use. It must not be able to write anything."""
+    """The role the query tools use. It must not be able to write anything.
+
+    NullPool, because the downgrade test drops and recreates this role: a
+    pooled connection authenticated as the old role survives that and then
+    fails with "invalid role OID" in whatever test happens to run next.
+    """
     _, ro_url = _test_database
-    created = sa.create_engine(ro_url)
+    created = sa.create_engine(ro_url, poolclass=sa.pool.NullPool)
     yield created
     created.dispose()
 
@@ -130,3 +135,18 @@ def alembic_config(_test_database: tuple[URL, URL]) -> Config:
     config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
     config.set_main_option("sqlalchemy.url", rw_url.render_as_string(hide_password=False))
     return config
+
+
+@pytest.fixture
+def seeded(conn: sa.Connection) -> sa.Connection:
+    """The golden fixture, loaded inside the test's transaction so it rolls
+    back. Tests that need data share the dataset the evals will use, rather
+    than inventing their own and drifting from it."""
+    from sqlalchemy.orm import Session
+
+    from scripts.seed import seed
+
+    session = Session(bind=conn, join_transaction_mode="create_savepoint")
+    seed(session)
+    session.flush()
+    return conn

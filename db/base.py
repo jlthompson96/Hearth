@@ -66,3 +66,14 @@ class Base(DeclarativeBase):
         dt.datetime: DateTime(timezone=True),
         Decimal: Numeric(18, 2),
     }
+
+
+#: A measurement that may be absent — a bodyweight set records no load. Spelled
+#: out rather than left to the bare `Decimal` annotation, which falls back to
+#: the money precision and would silently store a lift at two decimal places
+#: while body mass kept three.
+optional_measurement = Annotated[Decimal | None, mapped_column(Numeric(12, 3), nullable=True)]
+
+#: Session length in minutes. Two places is ample; the point of naming it is
+#: that the precision is chosen rather than inherited.
+duration = Annotated[Decimal | None, mapped_column(Numeric(8, 2), nullable=True)]

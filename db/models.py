@@ -16,7 +16,6 @@ Two rules are enforced structurally rather than by good intentions:
 
 import datetime as dt
 import uuid
-from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -32,7 +31,17 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from db.base import Base, measurement, money, price, quantity, timestamp, uuid_pk
+from db.base import (
+    Base,
+    duration,
+    measurement,
+    money,
+    optional_measurement,
+    price,
+    quantity,
+    timestamp,
+    uuid_pk,
+)
 
 # --- ingestion ----------------------------------------------------------------
 
@@ -222,7 +231,7 @@ class Workout(Base):
     id: Mapped[uuid_pk]
     performed_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False)
-    duration_minutes: Mapped[Decimal | None] = mapped_column(nullable=True)
+    duration_minutes: Mapped[duration]
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     batch_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("import_batch.id", ondelete="SET NULL"), nullable=True
@@ -259,7 +268,7 @@ class WorkoutSet(Base):
     set_number: Mapped[int] = mapped_column(Integer, nullable=False)
     reps: Mapped[int] = mapped_column(Integer, nullable=False)
     #: Null for bodyweight work.
-    weight: Mapped[Decimal | None] = mapped_column(nullable=True)
+    weight: Mapped[optional_measurement]
     weight_unit: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     workout: Mapped[Workout] = relationship(back_populates="sets")

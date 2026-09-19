@@ -66,6 +66,9 @@ ACCOUNTS: dict[str, tuple[str, dt.date, str, str]] = {
     "Everyday Checking": ("checking", dt.date(2023, 1, 1), "4200.00", "50.00"),
     "Emergency Savings": ("savings", dt.date(2023, 1, 1), "15000.00", "250.00"),
     "Retirement": ("retirement", dt.date(2023, 1, 1), "82000.00", "900.00"),
+    # A liability, stored negative. Net worth is then a plain sum with no
+    # kind-dependent sign juggling hidden inside a query.
+    "Credit Card": ("credit", dt.date(2023, 1, 1), "-1800.00", "50.00"),
     # Opens in March: before that it is not missing data, it did not exist.
     "Brokerage": ("brokerage", dt.date(YEAR, 3, 1), "24000.00", "1100.00"),
 }
@@ -165,6 +168,21 @@ def seed(session: Session) -> dict[str, int]:
                     )
                 )
                 sets += 1
+
+        # Bodyweight: no load recorded, which the progression tool must skip
+        # rather than read as zero.
+        for set_number in (1, 2, 3):
+            session.add(
+                WorkoutSet(
+                    workout_id=workout.id,
+                    exercise="pull-up",
+                    set_number=set_number,
+                    reps=6 + index // 4,
+                    weight=None,
+                    weight_unit=None,
+                )
+            )
+            sets += 1
     counts["workout"] = len(MONTH_ENDS)
     counts["workout_set"] = sets
 

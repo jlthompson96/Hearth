@@ -10,20 +10,7 @@ gap, and a date an export skipped is.
 import datetime as dt
 from decimal import Decimal
 
-import pytest
 import sqlalchemy as sa
-from sqlalchemy.orm import Session
-
-from scripts.seed import seed
-
-
-@pytest.fixture
-def seeded(conn: sa.Connection) -> sa.Connection:
-    """The golden fixture, inside the test's transaction so it rolls back."""
-    session = Session(bind=conn, join_transaction_mode="create_savepoint")
-    seed(session)
-    session.flush()
-    return conn
 
 
 def _coverage(conn: sa.Connection) -> list[tuple[dt.date, int, int, bool]]:
@@ -42,9 +29,9 @@ def test_months_before_an_account_opened_are_not_gaps(seeded: sa.Connection) -> 
     """The brokerage account opens in March. January is not missing it."""
     coverage = {row[0]: row for row in _coverage(seeded)}
 
-    assert coverage[dt.date(2024, 1, 31)][1] == 3
+    assert coverage[dt.date(2024, 1, 31)][1] == 4
     assert coverage[dt.date(2024, 1, 31)][3] is True
-    assert coverage[dt.date(2024, 3, 31)][1] == 4
+    assert coverage[dt.date(2024, 3, 31)][1] == 5
 
 
 def test_a_month_an_export_skipped_is_a_gap(seeded: sa.Connection) -> None:
@@ -66,8 +53,9 @@ def test_seeded_figures_are_exact(seeded: sa.Connection) -> None:
         {"as_of": dt.date(2024, 12, 31)},
     ).scalar_one()
 
-    # 4750.00 checking + 17750.00 savings + 91900.00 retirement + 33900.00 brokerage
-    assert total == Decimal("148300.00")
+    # 4750.00 checking + 17750.00 savings + 91900.00 retirement
+    # + 33900.00 brokerage - 1250.00 credit card
+    assert total == Decimal("147050.00")
 
 
 def test_seed_generates_stable_identifiers(seeded: sa.Connection) -> None:

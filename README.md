@@ -6,9 +6,13 @@ working over my own data. Everything runs on my machine.
 The rules that govern this codebase are in [CLAUDE.md](CLAUDE.md) — several of them are
 inviolable rather than preferred. The phase plan is in [docs/plan.md](docs/plan.md).
 
-**Status: Phase 1 (data layer).** Schema, migrations, the read-only role and the golden
-fixture are in place. No model and no agents yet — the LLM arrives at Phase 4. The data
-layer and query tools come first, because that is where correctness lives.
+**Status: Phase 3 (query and compute tools).** Schema, migrations, the read-only role, the
+golden fixture and the four query tools are in place and tested. No model and no agents
+yet — the LLM arrives at Phase 4.
+
+This is already useful without one. `get_net_worth_trend` will tell you what your net worth
+did over a period and which dates it cannot vouch for; it just cannot yet be asked in
+English.
 
 ## Prerequisites
 
@@ -62,6 +66,26 @@ Most of it is local connection details. Two entries deserve attention:
 
 `.env` is gitignored and is never read into an assistant session.
 
+## What the tools do
+
+Four functions, all pure Python over fixed parameterized queries, all running as the
+read-only role:
+
+| Function | Answers |
+|---|---|
+| `get_balance_history` | one account across a period |
+| `get_net_worth_trend` | the total across all accounts, **with coverage** |
+| `get_allocation` | holdings by symbol, with percentages, on a given date |
+| `get_lift_progression` | heaviest set per session for one lift, with estimated 1RM |
+
+The model picks the function and its arguments and receives the computed result. It never
+writes SQL and never does arithmetic — an 8B model at Q4 will produce a confident sum that
+is wrong by a digit, and a finance assistant that does that once is worthless afterwards.
+
+`get_net_worth_trend` returns coverage alongside the figures, and `coverage.caveat()`
+writes the qualification out as a finished sentence rather than leaving the model to
+compose one from a list of dates.
+
 ## Models
 
 Both model names are read from the environment and never hardcoded. Assume they change.
@@ -112,7 +136,8 @@ api/          FastAPI app. Phase 0 serves /health.
 config.py     Environment configuration, split so the API boots without a model server.
 steward/      The orchestrator. Routes each turn to a specialist.      (Phase 6)
 agents/       Tally (finance, Phase 5) and Forge (fitness, Phase 11).
-tools/        Query and compute functions, and Errand.                 (Phases 3, 9)
+tools/        finance.py and fitness.py — every figure an agent reports.
+              Errand, the one thing that leaves the house, lands in Phase 9.
 prompts/      Agent prompts as version-controlled Markdown, never inline literals.
 db/           Schema and shared column types. NUMERIC throughout.
 migrations/   Alembic. Tables, the snapshot_coverage view, the read-only role.
