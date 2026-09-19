@@ -6,9 +6,9 @@ working over my own data. Everything runs on my machine.
 The rules that govern this codebase are in [CLAUDE.md](CLAUDE.md) — several of them are
 inviolable rather than preferred. The phase plan is in [docs/plan.md](docs/plan.md).
 
-**Status: Phase 3 (query and compute tools).** Schema, migrations, the read-only role, the
-golden fixture and the four query tools are in place and tested. No model and no agents
-yet — the LLM arrives at Phase 4.
+**Status: Phase 4 (model connection).** Schema, migrations, the read-only role, the
+golden fixture, the four query tools and the model connection are in place. No agents yet
+— Tally arrives at Phase 5.
 
 This is already useful without one. `get_net_worth_trend` will tell you what your net worth
 did over a period and which dates it cannot vouch for; it just cannot yet be asked in
@@ -22,7 +22,7 @@ English.
 - Node 20.19+ or 22.12+ (Vite 7's floor)
 - Docker with Compose v2
 - [LM Studio](https://lmstudio.ai) serving an OpenAI-compatible endpoint on
-  `http://localhost:1234/v1` — not needed until Phase 4
+  `http://localhost:1234/v1`
 
 The hardware target is an RTX 4060 Ti with **8GB of VRAM**, shared between the chat model
 and the embedding model. Nothing larger than ~8B at Q4 fits. The 8,192-token context
@@ -85,6 +85,31 @@ is wrong by a digit, and a finance assistant that does that once is worthless af
 `get_net_worth_trend` returns coverage alongside the figures, and `coverage.caveat()`
 writes the qualification out as a finished sentence rather than leaving the model to
 compose one from a list of dates.
+
+## Running the model
+
+The host is a Windows machine running LM Studio as a Windows application. There is no WSL
+anywhere in the stack, which has two consequences.
+
+`make` recipes use `$(BIN)` rather than a hardcoded `.venv/bin`, so `migrate`, `seed`,
+`test` and `lint` work on both machines. `make dev` runs two servers under one shell with
+`trap`/`wait`, which needs a POSIX shell — use Git Bash or MSYS2 on the host, or start
+uvicorn and Vite separately.
+
+Anything model-dependent only means something on the host. The Phase 4 exit criterion is
+schema-valid structured output ten times out of ten against an 8B at Q4; measured against
+a different model on a different machine it measures nothing. The same goes for every eval
+pass rate.
+
+To exercise model code while developing on the Mac, enable **Serve on Local Network** in
+LM Studio and point the Mac at the host:
+
+```
+LM_STUDIO_BASE_URL=http://<host-lan-address>:1234/v1
+```
+
+Rule 5 permits the LAN, so this stays inside the rules. Results still belong to the host —
+it is the same model on the same GPU, reached over a wire.
 
 ## Models
 

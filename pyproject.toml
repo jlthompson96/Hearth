@@ -14,7 +14,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "N"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["api", "config.py", "db", "scripts", "tests", "tools"]
+files = ["api", "config.py", "db", "llm.py", "scripts", "tests", "tools"]
 exclude = "(^|/)(\\.venv|web|migrations/versions)/"
 
 [[tool.mypy.overrides]]
@@ -29,4 +29,5 @@ testpaths = ["tests"]
 addopts = "-q --strict-markers"
 markers = [
   "slow: hits a real model or container; excluded from the default run",
+  "model: needs a running LM Studio endpoint; skipped when unreachable",
 ]

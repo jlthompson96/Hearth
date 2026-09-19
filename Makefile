@@ -1,10 +1,21 @@
 # The six commands in CLAUDE.md are the contract. Everything else here exists
 # to serve them.
 
+VENV := .venv
+
+# The GPU host runs Windows natively with no WSL, where a virtualenv puts its
+# executables in Scripts/ rather than bin/. Recipes below use $(BIN), never a
+# hardcoded path, so migrate/seed/test/lint work on both machines.
+ifeq ($(OS),Windows_NT)
+PYTHON ?= py -3.12
+BIN    := $(VENV)/Scripts
+else
 PYTHON ?= python3.12
-VENV   := .venv
-PY     := $(VENV)/bin/python
-PIP    := $(VENV)/bin/pip
+BIN    := $(VENV)/bin
+endif
+
+PY  := $(BIN)/python
+PIP := $(BIN)/pip
 
 -include .env
 export
@@ -16,14 +27,14 @@ API_PORT ?= 8000
 ## dev — docker compose up + backend + frontend
 dev: install up
 	@trap 'kill 0' EXIT INT TERM; \
-		$(VENV)/bin/uvicorn api.main:app --reload --port $(API_PORT) & \
+		$(BIN)/uvicorn api.main:app --reload --port $(API_PORT) & \
 		npm --prefix web run dev & \
 		wait
 
 ## migrate — alembic upgrade head
 migrate: install
 	@test -f alembic.ini || { echo "Migrations land in Phase 1 (docs/plan.md)."; exit 1; }
-	$(VENV)/bin/alembic upgrade head
+	$(BIN)/alembic upgrade head
 
 ## seed — load the golden fixture dataset (also used by evals)
 seed: install
@@ -32,23 +43,23 @@ seed: install
 
 ## test — pytest
 test: install
-	$(VENV)/bin/pytest
+	$(BIN)/pytest
 
 ## eval — run the behavioural case file
 eval: install
 	@test -f evals/cases.yaml || { echo "The case file lands in Phase 7 (docs/plan.md)."; exit 1; }
-	$(VENV)/bin/pytest evals -p no:cacheprovider
+	$(BIN)/pytest evals -p no:cacheprovider
 
 ## lint — ruff + mypy
 lint: install
-	$(VENV)/bin/ruff check .
-	$(VENV)/bin/ruff format --check .
-	$(VENV)/bin/mypy
+	$(BIN)/ruff check .
+	$(BIN)/ruff format --check .
+	$(BIN)/mypy
 	npm --prefix web run typecheck
 
 fmt: install
-	$(VENV)/bin/ruff format .
-	$(VENV)/bin/ruff check --fix .
+	$(BIN)/ruff format .
+	$(BIN)/ruff check --fix .
 
 install: $(VENV) web/node_modules
 

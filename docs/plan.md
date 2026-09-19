@@ -46,7 +46,7 @@ with no partial writes.
 **Exit:** all tools tested including partial-coverage cases. No LLM involved yet — and the
 project is already useful.
 
-## Phase 4 — Model connection (1) — BLOCKED on WSL vs Windows host
+## Phase 4 — Model connection (1)
 
 `ChatOpenAI` against LM Studio. Structured-output smoke test.
 
@@ -146,7 +146,9 @@ transaction-level ingestion (drags in merchant categorization).
 ## Open questions
 
 1. CSV header row from one institution — unblocks Phase 2
-2. LM Studio on Windows host with backend in WSL? — unblocks Phase 4
-3. Embedding model (`nomic-embed-text` or `bge-small-en-v1.5` are the defaults) —
+2. Embedding model (`nomic-embed-text` or `bge-small-en-v1.5` are the defaults) —
    unblocks Phase 10
-4. Fitness data: app export or manual? — unblocks Phase 11
+3. Fitness data: app export or manual? — unblocks Phase 11
+
+**Answered:** LM Studio runs as the Windows app on the GPU host. No WSL anywhere — so the
+host toolchain is Windows-native, and `make` as written is Unix-only.
