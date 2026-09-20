@@ -28,7 +28,7 @@ API_PORT ?= 8000
 dev: install up
 	@trap 'kill 0' EXIT INT TERM; \
 		$(BIN)/uvicorn api.main:app --reload --port $(API_PORT) & \
-		npm --prefix web run dev & \
+		(cd web && npm run dev) & \
 		wait
 
 ## migrate — alembic upgrade head
@@ -55,7 +55,7 @@ lint: install
 	$(BIN)/ruff check .
 	$(BIN)/ruff format --check .
 	$(BIN)/mypy
-	npm --prefix web run typecheck
+	cd web && npm run typecheck
 
 fmt: install
 	$(BIN)/ruff format .
@@ -63,13 +63,20 @@ fmt: install
 
 install: $(VENV) web/node_modules
 
+# `python -m pip`, not `pip`: on Windows pip.exe cannot replace itself while it
+# is the running process, so `pip install --upgrade pip` fails outright and the
+# venv is left half-built — with the directory present, so make considers the
+# target done and never installs the requirements.
 $(VENV):
 	$(PYTHON) -m venv $(VENV)
-	$(PIP) install --upgrade pip
-	$(PIP) install -r requirements-dev.txt
+	$(PY) -m pip install --upgrade pip
+	$(PY) -m pip install -r requirements-dev.txt
 
+# `cd web && npm`, not `npm --prefix web`: on Windows npm resolves a relative
+# --prefix against the wrong root and looks for package.json beside the
+# Makefile instead of inside web/.
 web/node_modules: web/package.json
-	npm --prefix web install
+	cd web && npm install
 	touch web/node_modules
 
 ## up — infrastructure only; waits for Postgres to pass its healthcheck

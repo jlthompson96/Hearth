@@ -46,13 +46,21 @@ with no partial writes.
 **Exit:** all tools tested including partial-coverage cases. No LLM involved yet — and the
 project is already useful.
 
-## Phase 4 — Model connection (1)
+## Phase 4 — Model connection (1) — DONE
 
 `ChatOpenAI` against LM Studio. Structured-output smoke test.
 
-**Exit:** a constrained-JSON call returns schema-valid output 10/10 times.
+**Exit:** a constrained-JSON call returns schema-valid output 10/10 times. **Met** on the
+host against `nvidia/nemotron-3-nano-4b` at 8,192 context — 10/10 on each of three runs,
+30/30 overall.
 
-## Phase 5 — Tally, end to end (3)
+One thing that measurement surfaced, for Phase 6 rather than here: all 30 responses were
+schema-valid and all 30 routed a net-worth question to `forge`. Schema validity is what
+Phase 4 asked for and it holds. Routing accuracy is Phase 6's exit criterion and, on this
+single example, it is 0/30 — so expect the fallback the phase already anticipates
+(keyword rules plus embedding similarity) rather than prompt tweaking.
+
+## Phase 5 — Tally, end to end (3) — BLOCKED on Postgres on the host
 
 Finance agent only, using Phase 3 tools. SSE streaming to a minimal React chat. Single
 thread, no history UI.
@@ -146,9 +154,20 @@ transaction-level ingestion (drags in merchant categorization).
 ## Open questions
 
 1. CSV header row from one institution — unblocks Phase 2
-2. Embedding model (`nomic-embed-text` or `bge-small-en-v1.5` are the defaults) —
-   unblocks Phase 10
-3. Fitness data: app export or manual? — unblocks Phase 11
+2. Fitness data: app export or manual? — unblocks Phase 11
+3. **Postgres on the host — blocks Phase 5.** The GPU host has no Docker and no daemon,
+   so `make up`, `make migrate` and `make seed` cannot run there and 49 database tests
+   skip. Docker Desktop on Windows wants the WSL2 backend, which contradicts the answered
+   question below; Hyper-V is the alternative, as is a native Postgres 17 plus a pgvector
+   build. Undecided. Phase 5's exit criterion cannot be measured until it is.
 
 **Answered:** LM Studio runs as the Windows app on the GPU host. No WSL anywhere — so the
 host toolchain is Windows-native, and `make` as written is Unix-only.
+
+**Answered:** the embedding model is `text-embedding-nomic-embed-text-v1.5` — the
+`nomic-embed-text` of the two candidates, and the only one on the host. Pinned in `.env`
+and recorded in the README. Phase 10 is unblocked on this count.
+
+**Answered:** the chat model is `nvidia/nemotron-3-nano-4b`. It is 4B, not the ~8B the
+budget allows — see the README for why nothing in the 8B class is available here, and for
+what that costs. Every eval pass rate from here belongs to that model.
