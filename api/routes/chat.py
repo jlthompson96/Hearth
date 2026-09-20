@@ -5,10 +5,10 @@ send a body, and a question does not belong in a URL that ends up in logs and
 history. The client reads the response stream with `fetch`, which is a few more
 lines in React and one less thing to work around here.
 
-The specialist is named by the caller. That is temporary and deliberate: Phase 6
-puts the Steward in front of this and picks for you, and until it exists a
-dropdown is honest where a guess would not be. The `Agent` enum is what the
-router will classify into, so it moves rather than disappears.
+The Steward picks the specialist. `agent` may still name one directly, which
+bypasses routing — that exists for the evals, which need to measure a
+specialist without a routing decision in front of it, and for the UI's override
+when you already know who you are asking.
 
 Phase 5 is one thread and no history. The `thread` and `message` tables exist
 from Phase 1 and nothing writes to them yet: persistence is Phase 8's, along
@@ -29,13 +29,22 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents import forge, tally
-from agents.loop import DoneEvent, Event, RefusedEvent, TokenEvent, ToolEvent, ToolResultEvent
+from agents.loop import (
+    DoneEvent,
+    Event,
+    RefusedEvent,
+    RoutedEvent,
+    TokenEvent,
+    ToolEvent,
+    ToolResultEvent,
+)
+from steward import graph as steward
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
 
 class Agent(StrEnum):
-    """The specialists. Phase 6's router classifies into exactly this set."""
+    """A specialist named directly, bypassing the Steward."""
 
     tally = "tally"
     forge = "forge"
@@ -45,7 +54,9 @@ class ChatRequest(BaseModel):
     """Declared so the TypeScript client is generated rather than hand-written."""
 
     message: str = Field(min_length=1, max_length=2000)
-    agent: Agent = Agent.tally
+    #: None routes through the Steward, which is what the UI does. Naming a
+    #: specialist skips routing entirely.
+    agent: Agent | None = None
     #: Overridable only so an eval can pin the day. The UI never sends it, and
     #: there is no default in the agent — "this year" means something different
     #: on different days, and that is a caller's assumption to state.
@@ -56,12 +67,14 @@ def _sse(event: str, payload: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
-def _events(agent: Agent, message: str, today: dt.date) -> Iterator[Event]:
+def _events(agent: Agent | None, message: str, today: dt.date) -> Iterator[Event]:
+    if agent is None:
+        return steward.answer(message, today=today)
     answer = tally.answer if agent is Agent.tally else forge.answer
     return answer(message, today=today)
 
 
-def _stream(agent: Agent, message: str, today: dt.date) -> Iterator[str]:
+def _stream(agent: Agent | None, message: str, today: dt.date) -> Iterator[str]:
     try:
         for item in _events(agent, message, today):
             match item:
@@ -71,6 +84,13 @@ def _stream(agent: Agent, message: str, today: dt.date) -> Iterator[str]:
                     yield _sse("tool", {"name": name, "args": args})
                 case ToolResultEvent(name=name, result=result):
                     yield _sse("tool_result", {"name": name, "result": result})
+                case RoutedEvent(destination=destination, confidence=confidence, router=name):
+                    # Sent before the specialist runs, so the UI can attribute
+                    # an answer while it is still streaming.
+                    yield _sse(
+                        "routed",
+                        {"destination": destination, "confidence": confidence, "router": name},
+                    )
                 case RefusedEvent(signal=signal, message=text):
                     # Its own event, not a token stream: a refusal is a
                     # different kind of outcome from an answer and the client,

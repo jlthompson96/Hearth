@@ -90,23 +90,34 @@ a description while a router choice was a bare agent label — see Phase 6.
 
 **This is a legitimate stopping point.** One agent over your own data is most of the value.
 
-## Phase 6 — Steward and routing (3)
+## Phase 6 — Steward and routing (3) — DONE
 
 Constrained-JSON classifier behind a `Router` protocol. Iteration cap in a conditional
 edge. 20 labeled routing cases. Agent attribution in the UI.
 
 **Exit:** routing accuracy >= 90% on the labeled set. An adversarial delegation-loop prompt
-terminates within 6 hops.
+terminates within 6 hops. **Both met** — 60/60 (100%), every one of the 20 cases routed the
+same way on all three runs, which is the stricter reading `evals/README.md` asks for. The
+loop test drives the graph with a specialist that hands every turn back and a router that
+keeps accepting it, and the edge stops it at six.
 
-*If accuracy lands near 70%, fall back to keyword rules plus embedding similarity rather
-than grinding on prompt tweaks.*
+**The fallback was not needed, and the experiment is why.** Phase 5 guessed that the model
+was not bad at routing but bad at choosing between bare labels. Measured: descriptions
+100%, bare labels 85%. Bare labels would have failed the exit criterion; a sentence per
+destination cleared it. `tests/test_router.py::test_descriptions_beat_bare_labels` keeps
+the comparison so a future edit to the descriptions can be measured against it rather than
+argued about.
 
-Phase 5 produced evidence worth spending first. The same model that routed a net-worth
-question to `forge` 30 times out of 30 — choosing between the bare labels `tally`, `forge`
-and `errand` — picked the right tool 18 times out of 18 when the options carried names and
-descriptions. Before concluding the model cannot route, try giving the classifier what the
-tool schemas gave it: a sentence per destination saying what it is for. That is a cheaper
-experiment than the fallback and it may remove the need for it.
+The first measurement came in at exactly 90% — passing, but on the boundary — and both
+failures were the same failure: `unsupported` routed to `tally` for "what is a good price
+for a squat rack" and "should I move my savings into an index fund". The classifier could
+tell money from training but not *money* from *the money you have recorded*. Sharpening the
+descriptions to say REPORTING already-recorded data, and adding one question to the prompt
+— can this be answered by reading back what they have recorded? — took it to 100%.
+
+LangGraph arrives here rather than earlier, because this is the first thing in Hearth with
+more than one path through it. The hop cap is `_after_route`, evaluated before any
+specialist runs, so an over-budget turn costs no further model calls.
 
 ## Phase 7 — Eval harness (2)
 

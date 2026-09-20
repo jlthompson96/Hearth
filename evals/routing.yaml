@@ -1,0 +1,71 @@
+# Phase 6's labelled routing set. Phase 7 folds these into cases.yaml.
+#
+# Twenty cases, chosen to be answerable from the golden fixture's shape and to
+# fail in the ways routing actually fails rather than the ways that are easy to
+# write. Roughly a third are deliberately adversarial:
+#
+#   - "weight" means one thing in a gym and another at a bank, and it is the
+#     single word most likely to send a lift question to the finance agent
+#   - questions that name both domains, where only one is being asked about
+#   - out-of-scope questions that sound like one of the specialists, which is
+#     where a router with no `unsupported` destination quietly does damage
+#
+# `note` is for the reader, not the runner.
+
+cases:
+  # --- tally: plainly finance ------------------------------------------------
+  - question: How has my net worth moved this year?
+    expect: tally
+  - question: What is the balance of my Emergency Savings account?
+    expect: tally
+  - question: Show me my holdings broken down by symbol.
+    expect: tally
+  - question: How much is in my brokerage right now?
+    expect: tally
+  - question: What percentage of my portfolio is in bonds?
+    expect: tally
+  - question: Did my credit card balance go down last quarter?
+    expect: tally
+
+  # --- forge: plainly training -----------------------------------------------
+  - question: How has my back squat progressed this year?
+    expect: forge
+  - question: What is my estimated one rep max on bench press?
+    expect: forge
+  - question: How many sets did I log last month?
+    expect: forge
+  - question: Show me my heaviest working set of squats.
+    expect: forge
+  - question: Has my body mass changed since January?
+    expect: forge
+
+  # --- the word "weight" -----------------------------------------------------
+  - question: How much weight have I put on my squat since the spring?
+    expect: forge
+    note: lifted weight, not money
+  - question: What is my body weight doing over the last six months?
+    expect: forge
+    note: recorded measurement, still training
+  - question: How much weight is my portfolio giving to equities?
+    expect: tally
+    note: the word weight used as allocation, in a finance question
+
+  # --- both domains named, one being asked about -----------------------------
+  - question: My gym membership went up — what has my net worth done this year?
+    expect: tally
+    note: the gym is context; the question is about net worth
+  - question: I have been spending a lot on protein — how is my bench press going?
+    expect: forge
+    note: spending is context; the question is about the lift
+
+  # --- out of scope ----------------------------------------------------------
+  - question: What is the weather going to be tomorrow?
+    expect: unsupported
+  - question: What is a good price for a squat rack?
+    expect: unsupported
+    note: sounds like both specialists; is neither — it is not this person's data
+  - question: Should I move my savings into an index fund?
+    expect: unsupported
+    note: financial advice, not a question about recorded data
+  - question: Who won the game last night?
+    expect: unsupported

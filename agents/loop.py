@@ -69,11 +69,27 @@ class RefusedEvent:
 
 
 @dataclass(frozen=True)
+class RoutedEvent:
+    """Which specialist the Steward chose, and how sure it was.
+
+    Emitted before the specialist runs so the UI can attribute an answer while
+    it is still streaming, rather than labelling it after the fact. `router`
+    names the implementation that decided, because routing will not always be
+    one mechanism — a keyword rule and a model call should not be
+    indistinguishable in a transcript.
+    """
+
+    destination: str
+    confidence: float
+    router: str
+
+
+@dataclass(frozen=True)
 class DoneEvent:
     reason: str = "complete"
 
 
-Event = TokenEvent | ToolEvent | ToolResultEvent | RefusedEvent | DoneEvent
+Event = TokenEvent | ToolEvent | ToolResultEvent | RefusedEvent | RoutedEvent | DoneEvent
 
 
 @lru_cache

@@ -204,9 +204,11 @@ def test_an_ordinary_fitness_question_is_not_refused(
     assert "refused" not in [name for name, _ in _events(response.text)]
 
 
-def test_the_agent_defaults_to_tally_and_is_selectable(
+def test_the_agent_defaults_to_routing_and_is_still_selectable(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Before Phase 6 the default was Tally, which was a guess dressed as a
+    default. It is now None, meaning "ask the Steward"."""
     seen: list[object] = []
 
     def _capture(agent: object, question: str, today: dt.date) -> Iterator[Event]:
@@ -218,8 +220,70 @@ def test_the_agent_defaults_to_tally_and_is_selectable(
     client.post("/api/chat", json={"message": "hello"})
     client.post("/api/chat", json={"message": "hello", "agent": "forge"})
 
-    assert [a.value for a in seen] == ["tally", "forge"]  # type: ignore[attr-defined]
+    assert seen[0] is None
+    assert seen[1].value == "forge"  # type: ignore[attr-defined]
 
 
 def test_an_unknown_agent_is_rejected(client: TestClient) -> None:
     assert client.post("/api/chat", json={"message": "hi", "agent": "steward"}).status_code == 422
+
+
+def test_no_agent_routes_through_the_steward(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The UI sends no agent. Phase 6's whole point is that it does not have to."""
+    seen: list[object] = []
+
+    def _capture(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+        seen.append(agent)
+        yield DoneEvent()
+
+    monkeypatch.setattr(chat_route, "_events", _capture)
+    client.post("/api/chat", json={"message": "how has my net worth moved"})
+
+    assert seen == [None]
+
+
+def test_a_named_agent_still_bypasses_routing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The evals need to measure a specialist without a routing decision in
+    front of it, or a tool-selection failure and a routing failure look the
+    same from outside."""
+    seen: list[object] = []
+
+    def _capture(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+        seen.append(agent)
+        yield DoneEvent()
+
+    monkeypatch.setattr(chat_route, "_events", _capture)
+    client.post("/api/chat", json={"message": "hi", "agent": "forge"})
+
+    assert [a.value for a in seen] == ["forge"]  # type: ignore[attr-defined]
+
+
+def test_the_routing_decision_reaches_the_client(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Agent attribution in the UI (Phase 6) is this event and nothing else."""
+    from agents.loop import RoutedEvent
+
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(
+            RoutedEvent(destination="forge", confidence=0.92, router="constrained-json"),
+            TokenEvent("Your squat went up."),
+            DoneEvent(),
+        ),
+    )
+
+    response = client.post("/api/chat", json={"message": "how is my squat"})
+    names = [name for name, _ in _events(response.text)]
+    assert names[0] == "routed"
+
+    import json
+
+    payload = json.loads(_events(response.text)[0][1])
+    assert payload["destination"] == "forge"
+    assert payload["router"] == "constrained-json"

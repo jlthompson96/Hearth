@@ -44,7 +44,7 @@ export interface components {
     schemas: {
         /**
          * Agent
-         * @description The specialists. Phase 6's router classifies into exactly this set.
+         * @description A specialist named directly, bypassing the Steward.
          * @enum {string}
          */
         Agent: "tally" | "forge";
@@ -55,8 +55,7 @@ export interface components {
         ChatRequest: {
             /** Message */
             message: string;
-            /** @default tally */
-            agent: components["schemas"]["Agent"];
+            agent?: components["schemas"]["Agent"] | null;
             /** Today */
             today?: string | null;
         };

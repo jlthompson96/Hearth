@@ -6,14 +6,13 @@ working over my own data. Everything runs on my machine.
 The rules that govern this codebase are in [CLAUDE.md](CLAUDE.md) — several of them are
 inviolable rather than preferred. The phase plan is in [docs/plan.md](docs/plan.md).
 
-**Status: Phases 5 and 11 complete.** Two specialists answer over your own data,
-streaming to a chat UI over SSE — **Tally** for finances and **Forge** for training. Ask
-"how has my net worth moved this year" and you get the figure the tool computed, to the
-cent, with the coverage gaps stated before the trend.
+**Status: Phases 5, 6 and 11 complete.** Ask a question and the **Steward** routes it to a
+specialist — **Tally** for finances, **Forge** for training — or declines it when no record
+can answer it. The answer streams back over SSE with the figure the tool computed, to the
+cent, and the coverage gaps stated before the trend.
 
-You pick the specialist by hand for now. Phase 6 puts the Steward in front of them and
-chooses for you; until it exists, saying which agent you are talking to is honest where a
-silent guess would not be.
+You do not say which specialist you want. Routing is a constrained-JSON classifier and it
+is measured: 60/60 on a 20-case labelled set, every case unanimous across three runs.
 
 ## Prerequisites
 
@@ -128,9 +127,19 @@ is wrong by a digit, and a finance assistant that does that once is worthless af
 writes the qualification out as a finished sentence rather than leaving the model to
 compose one from a list of dates.
 
-## Asking Tally
+## Asking a question
 
-`make dev`, then open the UI and ask. Tally is given three of the four tools — the lift
+`make dev`, then open the UI and ask — you do not name a specialist. The Steward reads the
+question and sends it to one of them, or declines it when answering would need something
+your records do not contain. The turn is labelled with who answered it before the answer
+starts streaming, and flagged when the router was unsure.
+
+Routing is a constrained-JSON call, not tool-calling: LM Studio parses tool calls out of
+model text against a chat template, and at this size that is too unreliable to put under
+every turn. It sits behind a `Router` protocol, so an LLM tool-calling router can replace
+it on better hardware without the graph noticing.
+
+Tally is given three of the five tools — the lift
 progression is Forge's and costs context on a finance turn for nothing, so it is not in
 its list. The three schemas cost about **300 tokens** of the 8,192 window before you have
 typed anything; `schema_cost()` in `tools/bindings.py` is how that number is produced, so
