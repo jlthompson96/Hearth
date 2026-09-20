@@ -10,6 +10,11 @@ UI reference: the Design canvas — seven screens (Chat, Data & imports, Manual 
 audit, Model log, Connections, Settings). Both side panels collapse; in the real app that
 state is one localStorage key read on mount, not per-route.
 
+Five of those seven are scheduled: Chat (5, 6, 8), Data & imports and Manual entry (2),
+Egress audit (9), Connections (12). Model log and Settings are in the backlog with their
+reasons. There is no UI phase — each screen lands with the capability behind it, because a
+screen built before its backend is a mock with a router in front of it.
+
 ---
 
 ## Phase 0 — Scaffold (1)
@@ -60,13 +65,27 @@ Phase 4 asked for and it holds. Routing accuracy is Phase 6's exit criterion and
 single example, it is 0/30 — so expect the fallback the phase already anticipates
 (keyword rules plus embedding similarity) rather than prompt tweaking.
 
-## Phase 5 — Tally, end to end (3)
+## Phase 5 — Tally, end to end (3) — DONE
 
 Finance agent only, using Phase 3 tools. SSE streaming to a minimal React chat. Single
 thread, no history UI.
 
 **Exit:** "how has my net worth moved this year" returns a correct, tool-derived answer
-that states coverage caveats.
+that states coverage caveats. **Met**, 3/3 runs: calls `net_worth_trend` with the right
+dates, reports `$38,250.00` — the figure the tool returned, to the cent — and states the
+July gap before describing the trend.
+
+**With one asterisk.** The golden fixture is a 2024 dataset and it is now 2026, so "this
+year" only reaches data when the day is pinned. The eval seam exists (`today` on the chat
+request, required by the agent, never defaulted in code) but the underlying question is
+unanswered: either the fixture gets rebased to the current year on seed, or every eval
+that says "this year" pins the date and stops testing the phrase a person would type.
+Phase 7 has to decide, because it is the phase that turns this question into cases.
+
+Tool selection was measured before the agent was written rather than assumed: 18/18 across
+six questions and three runs, with parseable dates 12/12. That is a better result than
+Phase 4's routing check predicted, and the likely reason is that a tool carries a name and
+a description while a router choice was a bare agent label — see Phase 6.
 
 **This is a legitimate stopping point.** One agent over your own data is most of the value.
 
@@ -80,6 +99,13 @@ terminates within 6 hops.
 
 *If accuracy lands near 70%, fall back to keyword rules plus embedding similarity rather
 than grinding on prompt tweaks.*
+
+Phase 5 produced evidence worth spending first. The same model that routed a net-worth
+question to `forge` 30 times out of 30 — choosing between the bare labels `tally`, `forge`
+and `errand` — picked the right tool 18 times out of 18 when the options carried names and
+descriptions. Before concluding the model cannot route, try giving the classifier what the
+tool schemas gave it: a sentence per destination saying what it is for. That is a cheaper
+experiment than the fallback and it may remove the need for it.
 
 ## Phase 7 — Eval harness (2)
 
@@ -143,6 +169,12 @@ tools blocked. Results fenced before entering context.
 - CSV / chart export
 - Model log browser — the drawer from a chat message is the useful part; the standalone
   browser duplicates what a tracing tool does better
+- Settings screen — in the Design canvas but never scheduled, and on inspection it has
+  nothing to hold. Configuration is `.env`, read at startup: model names, database URLs,
+  ports, the SearXNG endpoint. A screen that edits those either restarts the process or
+  lies about being in effect, and one user editing their own `.env` in a text editor is
+  not worse off. Revisit if something genuinely per-session appears — a retention window,
+  a default agent — rather than building the screen and then looking for its contents.
 - Langfuse — revisit only if pytest results files stop being enough
 
 ## Cut deliberately

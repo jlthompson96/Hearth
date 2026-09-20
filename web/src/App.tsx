@@ -1,10 +1,13 @@
 /**
- * Phase 0's frontend is one thing: proof that the dev server runs and that the
- * proxy reaches the backend. The seven screens of the Design canvas arrive with
- * their phases, starting with Chat in Phase 5.
+ * Phase 5: the Chat screen, the first of the Design canvas's seven.
+ *
+ * The backend probe from Phase 0 stays, reduced to a dot in the header. It is
+ * the first thing you want to know when an answer does not arrive, and it costs
+ * one request on mount.
  */
 import { useEffect, useState } from 'react'
 
+import { Chat } from './Chat'
 // Generated from the API's OpenAPI schema by `npm run gen:types`, and committed
 // so a fresh clone typechecks without a backend running. Never hand-edited.
 import type { components } from './api/schema'
@@ -37,27 +40,20 @@ export function App() {
 
   return (
     <main>
-      <h1>Hearth</h1>
-      <p className="subtitle">Local-first. Nothing here leaves the machine.</p>
+      <header className="masthead">
+        <div>
+          <h1>Hearth</h1>
+          <p className="subtitle">Local-first. Nothing here leaves the machine.</p>
+        </div>
+        <p className="probe" title={probe.state === 'down' ? probe.detail : undefined}>
+          <span className={`dot ${probe.state === 'up' ? 'up' : 'down'}`} />
+          {probe.state === 'up' && `v${probe.health.version}`}
+          {probe.state === 'checking' && 'checking'}
+          {probe.state === 'down' && 'backend unreachable'}
+        </p>
+      </header>
 
-      <section className="card">
-        <h2>Backend</h2>
-        {probe.state === 'checking' && <p className="muted">checking /health…</p>}
-        {probe.state === 'up' && (
-          <p>
-            <span className="dot up" /> up — v{probe.health.version}
-          </p>
-        )}
-        {probe.state === 'down' && (
-          <>
-            <p>
-              <span className="dot down" /> unreachable
-            </p>
-            <p className="muted">{probe.detail}</p>
-            <p className="muted">Is uvicorn running? `make dev` starts both halves.</p>
-          </>
-        )}
-      </section>
+      <Chat />
     </main>
   )
 }

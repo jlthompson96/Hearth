@@ -6,14 +6,13 @@ working over my own data. Everything runs on my machine.
 The rules that govern this codebase are in [CLAUDE.md](CLAUDE.md) — several of them are
 inviolable rather than preferred. The phase plan is in [docs/plan.md](docs/plan.md).
 
-**Status: Phase 4 complete, verified on the host.** Schema, migrations, the read-only
-role, the golden fixture, the four query tools and the model connection are in place, and
-the constrained-JSON exit criterion has been measured against the real model — 10/10 on
-each of three runs. No agents yet — Tally arrives at Phase 5.
+**Status: Phase 5 complete.** Tally answers questions about your own finances over the
+Phase 3 tools, streaming to a chat UI over SSE. Ask "how has my net worth moved this
+year" and you get the figure the tool computed, to the cent, with the coverage gaps
+stated before the trend.
 
-This is already useful without one. `get_net_worth_trend` will tell you what your net worth
-did over a period and which dates it cannot vouch for; it just cannot yet be asked in
-English.
+Per docs/plan.md this is a legitimate stopping point: one agent over your own data is
+most of the value. Phase 6 adds the Steward and a second specialist behind it.
 
 ## Prerequisites
 
@@ -125,6 +124,32 @@ is wrong by a digit, and a finance assistant that does that once is worthless af
 `get_net_worth_trend` returns coverage alongside the figures, and `coverage.caveat()`
 writes the qualification out as a finished sentence rather than leaving the model to
 compose one from a list of dates.
+
+## Asking Tally
+
+`make dev`, then open the UI and ask. Tally is given three of the four tools — the lift
+progression is Forge's and costs context on a finance turn for nothing, so it is not in
+its list. The three schemas cost about **300 tokens** of the 8,192 window before you have
+typed anything; `schema_cost()` in `tools/bindings.py` is how that number is produced, so
+it can be watched rather than assumed.
+
+The chat shows which tool ran and with which arguments. On a model this size the useful
+question about any figure is where it came from, and one line of tool call answers it
+without a tracing UI.
+
+Two behaviours are load-bearing and are tested rather than hoped for:
+
+- **The caveat is repeated, not summarised.** When coverage is incomplete the tool emits a
+  finished sentence and Tally states it before describing the trend.
+- **No data is never reported as no change.** Asked about a period the data does not
+  cover, it says the data is missing and where the data actually is. This was a real
+  failure, not a hypothetical: an earlier prompt had it answer "your net worth has not
+  changed this year" for a year with no snapshots at all.
+
+**The golden fixture is a 2024 dataset.** Asked "this year" on today's date it will
+correctly tell you there is no data. Pin the day with `{"today": "2024-09-20"}` on
+`POST /api/chat` to ask it about the fixture's year — the agent never defaults the date,
+so the assumption is always the caller's and always visible.
 
 ## Running the model
 
