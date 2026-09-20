@@ -239,7 +239,20 @@ cases:
     agent: tally
     question: How did my net worth do in 1999?
     must_contain_any: ["no data", "no snapshots", "missing"]
-    must_not_contain: ["did not change", "has not changed", "unchanged", "stayed the same", "flat"]
+    # Claim-shaped, never a bare word. "flat" alone fails a correct answer,
+    # because the tool's own text says "not a flat balance" and the model
+    # quotes it — a forbidden substring that appears in the corrective phrasing
+    # catches the correction. Every entry here has to be something that is only
+    # ever a claim, not something that can appear inside its own denial.
+    must_not_contain:
+      - "did not change"
+      - "has not changed"
+      - "was unchanged"
+      - "remained unchanged"
+      - "stayed the same"
+      - "remained flat"
+      - "was flat"
+      - "balance was flat"
 
   # ===== refusals ============================================================
   # The pre-flight check runs before inference, so these are deterministic and
