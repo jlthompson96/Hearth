@@ -79,15 +79,46 @@ web/node_modules: web/package.json
 	cd web && npm install
 	touch web/node_modules
 
-## up — infrastructure only; waits for Postgres to pass its healthcheck
+# Two ways to get a Postgres. Setting PGDATA in .env selects a native cluster
+# driven by pg_ctl; leaving it unset keeps docker compose. The GPU host has no
+# working Docker — its WSL2 backend needs a Windows feature that is off, and the
+# WSL2 route is ruled out anyway — so it runs native. The Mac runs compose.
+#
+# Native gets you Postgres and nothing else: SearXNG is a compose service, and
+# Phase 9 will need a native home for it or a working Docker on this machine.
+#
+# The server is started through Start-Process, not straight from the recipe,
+# because a postgres launched from the shell inherits make's stdout on Windows
+# and never lets go of it. Shell redirection does not prevent that — the handle
+# is inherited at CreateProcess time — so `make up | anything` would hang
+# forever on a server that had in fact started. Start-Process gives the child
+# fresh handles. Readiness is then pg_isready's job rather than pg_ctl -w's.
+
+## up — infrastructure only; waits for Postgres to accept connections
 up:
+ifdef PGDATA
+	@"$(PGBIN)/pg_ctl" -D "$(PGDATA)" status >/dev/null 2>&1 || powershell -NoProfile -Command \
+		"Start-Process -FilePath '$(PGBIN)/pg_ctl.exe' -WindowStyle Hidden -ArgumentList \
+		 '-D','$(PGDATA)','-l','$(PGDATA)/server.log','start'"
+	@until "$(PGBIN)/pg_isready" -q -h 127.0.0.1 -p $(POSTGRES_PORT); do sleep 1; done
+	@echo "postgres ready on 127.0.0.1:$(POSTGRES_PORT)"
+else
 	docker compose up -d --wait
+endif
 
 down:
+ifdef PGDATA
+	@"$(PGBIN)/pg_ctl" -D "$(PGDATA)" -m fast stop </dev/null || true
+else
 	docker compose down
+endif
 
 logs:
+ifdef PGDATA
+	@tail -f "$(PGDATA)/server.log"
+else
 	docker compose logs -f
+endif
 
 ## freeze — turn requirements.txt ranges into exact pins, once resolved
 freeze: install

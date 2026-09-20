@@ -25,7 +25,8 @@ English.
 - GNU make. Present on the Mac; on the Windows host, `winget install ezwinports.make`
   (winget does not add it to its Links directory, so add its `bin` to PATH by hand).
 - Node 20.19+ or 22.12+ (Vite 7's floor)
-- Docker with Compose v2
+- Docker with Compose v2 — **or** a native Postgres 17, see
+  [Postgres without Docker](#postgres-without-docker)
 - [LM Studio](https://lmstudio.ai) serving an OpenAI-compatible endpoint on
   `http://localhost:1234/v1`
 
@@ -70,6 +71,40 @@ Most of it is local connection details. Two entries deserve attention:
   `/health` do not depend on them.
 
 `.env` is gitignored and is never read into an assistant session.
+
+## Postgres without Docker
+
+The GPU host has no working Docker: Docker Desktop is installed but its WSL2 engine fails
+with `Virtual Machine Platform not enabled`, and the WSL2 route contradicts the no-WSL
+decision this project already made. So that machine runs a native cluster instead, and
+`make up`, `make down` and `make logs` drive `pg_ctl` rather than compose whenever `PGDATA`
+is set in `.env`. With it unset, everything behaves as before.
+
+Setting one up needs neither an installer nor admin rights — the PostgreSQL Windows
+**binary zip** is just files:
+
+```bash
+# extract the zip, then, with $PGBIN on PATH:
+initdb -D <PGDATA> -U hearth --auth-host=scram-sha-256 --pwfile=<file>   # then delete the file
+make up                                                                  # pg_ctl start
+createdb -h 127.0.0.1 -U hearth hearth
+make migrate && make seed && make test
+```
+
+`hearth` is the bootstrap superuser, which is what `POSTGRES_USER` made it inside the
+container — the arrangement is the same, minus the container. The cluster listens on
+127.0.0.1 only, matching the compose file's binding.
+
+Two things you do not get, both deliberate rather than overlooked:
+
+- **pgvector.** It is not in the zip and building it on Windows needs an MSVC toolchain.
+  Nothing before Phase 10 stores a vector — no migration, model or query tool references
+  one — so the test harness warns and continues rather than failing fifty unrelated tests.
+  Phase 10 must install it and assert it is there.
+- **SearXNG.** It is a compose service, so Phase 9 needs either a working Docker or a
+  native SearXNG.
+
+A native cluster is not a service and does not survive a reboot. `make up` starts it.
 
 ## What the tools do
 

@@ -10,6 +10,7 @@ nothing is worse than a red one.
 """
 
 import os
+import warnings
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -61,9 +62,24 @@ def _test_database() -> Iterator[tuple[URL, URL]]:
 
     # pgvector is created by the initdb script on the real database; the test
     # database is made here, so it needs the extension too.
+    #
+    # It is tolerated when absent, and only until Phase 10. The GPU host runs a
+    # native Postgres rather than the pgvector image, and building the extension
+    # there needs an MSVC toolchain that is not installed. Nothing before Phase
+    # 10 stores a vector — no migration, model or query tool references one — so
+    # a hard failure here would take out fifty tests that have nothing to do
+    # with embeddings. The warning is the point: Phase 10 must assert the
+    # extension exists rather than inheriting this silence.
     seed = sa.create_engine(rw_url, isolation_level="AUTOCOMMIT")
     with seed.connect() as connection:
-        connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
+        try:
+            connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
+        except sa.exc.DBAPIError as error:
+            warnings.warn(
+                f"pgvector is not installed ({error.__class__.__name__}); continuing "
+                "without it. Phase 10 (RAG) cannot run against this database.",
+                stacklevel=2,
+            )
     seed.dispose()
 
     # The read-only migration creates whatever role DATABASE_URL_RO names.

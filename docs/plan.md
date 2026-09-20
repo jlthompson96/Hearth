@@ -60,7 +60,7 @@ Phase 4 asked for and it holds. Routing accuracy is Phase 6's exit criterion and
 single example, it is 0/30 — so expect the fallback the phase already anticipates
 (keyword rules plus embedding similarity) rather than prompt tweaking.
 
-## Phase 5 — Tally, end to end (3) — BLOCKED on Postgres on the host
+## Phase 5 — Tally, end to end (3)
 
 Finance agent only, using Phase 3 tools. SSE streaming to a minimal React chat. Single
 thread, no history UI.
@@ -111,7 +111,7 @@ Known gotchas: SearXNG returns HTML by default — enable JSON in `settings.yml`
 or every request 403s. Its bot limiter throttles agents; relax it in `limiter.toml`, safe
 because the instance is private.
 
-## Phase 10 — RAG (3) — BLOCKED on embedding model choice
+## Phase 10 — RAG (3) — BLOCKED on pgvector on the host
 
 pgvector, local embeddings via LM Studio `/v1/embeddings`, chunking, `k<=5` with token cap,
 retrieved chunk IDs logged.
@@ -155,14 +155,23 @@ transaction-level ingestion (drags in merchant categorization).
 
 1. CSV header row from one institution — unblocks Phase 2
 2. Fitness data: app export or manual? — unblocks Phase 11
-3. **Postgres on the host — blocks Phase 5.** The GPU host has no Docker and no daemon,
-   so `make up`, `make migrate` and `make seed` cannot run there and 49 database tests
-   skip. Docker Desktop on Windows wants the WSL2 backend, which contradicts the answered
-   question below; Hyper-V is the alternative, as is a native Postgres 17 plus a pgvector
-   build. Undecided. Phase 5's exit criterion cannot be measured until it is.
+3. SearXNG without Docker — blocks Phase 9. See the Postgres answer below: that machine
+   has no working Docker, and SearXNG is a compose service. Either Docker gets fixed or
+   SearXNG runs natively.
+4. pgvector on the host — blocks Phase 10 alongside nothing else now that the embedding
+   model is chosen. It needs an MSVC build on Windows. Nothing earlier touches a vector
+   column, so it can wait, but Phase 10 must install it and assert it rather than
+   inheriting the test harness's warning.
 
 **Answered:** LM Studio runs as the Windows app on the GPU host. No WSL anywhere — so the
 host toolchain is Windows-native, and `make` as written is Unix-only.
+
+**Answered:** the GPU host runs a **native Postgres 17.11**, not Docker. Docker Desktop is
+installed there but its WSL2 engine fails with `Virtual Machine Platform not enabled`, and
+enabling WSL2 would contradict the answer above. The PostgreSQL Windows binary zip needs
+no installer and no admin rights, so `make up`/`down`/`logs` drive `pg_ctl` when `PGDATA`
+is set and compose when it is not. The full chain runs there: 63 tests pass, none skipped.
+See the README.
 
 **Answered:** the embedding model is `text-embedding-nomic-embed-text-v1.5` — the
 `nomic-embed-text` of the two candidates, and the only one on the host. Pinned in `.env`
