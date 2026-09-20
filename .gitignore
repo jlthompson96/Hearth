@@ -3,6 +3,11 @@
 .env
 data/
 
+# Eval runs recorded against a tree with uncommitted changes. They measured no
+# commit, so they cannot be compared to one — useful while iterating, never
+# worth keeping. A clean run writes evals/results/<sha>.json, which IS tracked.
+evals/results/*-dirty.json
+
 .venv/
 __pycache__/
 *.py[cod]

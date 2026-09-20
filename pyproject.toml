@@ -26,8 +26,12 @@ ignore_missing_imports = true
 # and friends the same way the running app does.
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-q --strict-markers"
+# `make test` is the loop you run after every edit, so it holds nothing that
+# needs a model. Behavioural measurement lives in evals/ behind `make eval`;
+# what stays here and is marked `model` is the connection contract itself,
+# runnable on demand with `pytest -m model`.
+addopts = "-q --strict-markers -m 'not model'"
 markers = [
   "slow: hits a real model or container; excluded from the default run",
-  "model: needs a running LM Studio endpoint; skipped when unreachable",
+  "model: needs a running LM Studio endpoint; deselected by default",
 ]

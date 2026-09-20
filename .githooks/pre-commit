@@ -1,0 +1,38 @@
+#!/bin/sh
+# Reminds you to re-measure when you change something the evals measure.
+#
+# Scoped to prompts/ and agents/ because those are the files whose effect is
+# only visible as a pass rate. A change to tools/ or db/ is caught by `make
+# test` in seconds; a change to a prompt is caught by nothing at all until
+# someone notices an answer got worse.
+#
+# It does not run the evals. `make eval` takes ten minutes against a local
+# model, and a pre-commit hook that costs ten minutes is a hook that gets
+# bypassed with --no-verify within a week. It blocks nothing and asks nothing;
+# it prints what changed and what would measure it.
+#
+# Install with `make hooks`.
+
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(prompts/|agents/)' || true)
+[ -z "$staged" ] && exit 0
+
+sha=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+latest=$(ls -t evals/results/*.json 2>/dev/null | head -1)
+
+printf '\n  This commit changes files the evals measure:\n'
+printf '%s\n' "$staged" | sed 's/^/    /'
+
+if [ -n "$latest" ]; then
+  printf '\n  Last recorded run: %s\n' "$(basename "$latest")"
+  case "$(basename "$latest")" in
+    *-dirty*) printf '  It was recorded against a dirty tree, so it describes no commit.\n' ;;
+  esac
+else
+  printf '\n  No run has ever been recorded.\n'
+fi
+
+printf '\n  Re-measure with:  make eval\n'
+printf '  Then commit evals/results/%s.json alongside this change,\n' "${sha:-<sha>}"
+printf '  so the delta is a diff in a number rather than a memory of one.\n\n'
+
+exit 0

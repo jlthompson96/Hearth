@@ -119,15 +119,35 @@ LangGraph arrives here rather than earlier, because this is the first thing in H
 more than one path through it. The hop cap is `_after_route`, evaluated before any
 specialist runs, so an over-budget turn costs no further model calls.
 
-## Phase 7 — Eval harness (2)
+## Phase 7 — Eval harness (2) — DONE
 
 Extend Phase 6's 20 cases into `evals/cases.yaml`. Thirty-line pytest runner, 3 runs per
 case, results to `evals/results/<sha>.json`, git hook scoped to `prompts/` and `agents/`.
 
 Cases: routing, tool selection, grounded numbers (exact figure present), required caveats,
-refusals.
+refusals. Forty cases — 20 routing, 5 tool, 4 grounded, 4 caveat, 7 refusal.
 
-**Exit:** editing a prompt produces a measurable delta rather than a vibe.
+**Exit:** editing a prompt produces a measurable delta rather than a vibe. **Met, and
+demonstrated rather than assumed.** Baseline is 40/40 cases and 120/120 runs. A suite that
+passes everything on its first run proves nothing until it is shown to fail, so the caveat
+section was cut out of `prompts/tally.md` and the cases re-run: both caveat cases went
+3/3 to 0/3, and back to 3/3 when it was restored. That is the delta the phase asked for.
+
+What the failure showed is worth keeping. The degraded prompt did not make the model drop
+the caveat — it made it paraphrase, "complete only from Aug 31 onward" in place of the
+sentence the tool handed it. The cases assert the ISO date verbatim and so caught it. That
+strictness is the point: `Coverage.caveat()` writes the qualification in full precisely so
+a 4B model never has to compose one, and a paraphrase is the first step toward a summary.
+
+`make test` was the other half of this phase, unplanned. Behavioural cases had accumulated
+inside it — 180 model calls by Phase 6 — and it had grown from 3 seconds to 377. Model
+work now lives in `evals/` behind `make eval`, `make test` is back to about 3 seconds and
+holds nothing that needs a model, and the two model-marked tests that remain (the Phase 4
+connection smoke test and the router A/B) are deselected by default and run with
+`pytest -m model`.
+
+The pre-commit hook warns and blocks nothing. A hook that costs ten minutes against a
+local model is a hook that gets bypassed with `--no-verify` inside a week.
 
 ## Phase 8 — Thread history (2)
 

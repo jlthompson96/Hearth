@@ -1,29 +1,25 @@
-"""Phase 6's routing measurement.
+"""The router's shape, and the experiment that settled its design.
 
-The exit criterion is >= 90% accuracy on the labelled set, and `evals/README.md`
-adds a stricter reading for routing specifically: every run of a routing case
-has to pass, because a destination that is right two times in three is a turn
-that lands in the wrong agent every third time someone asks.
+Accuracy itself moved to `evals/cases.yaml` when Phase 7 arrived — it is a
+behavioural measurement over a labelled set, which is what that file is for,
+and running it here made `make test` take six minutes. What stays is everything
+a string comparison can settle without a model, plus the A/B.
 
-Both numbers are reported. The gate is the strict one.
-
-The A/B below is the experiment Phase 5 argued for: the same model, the same
-cases, the only difference being whether each destination carries a sentence
-saying what it is for. It runs as its own test so the comparison is recorded
-rather than asserted from memory, and so a future change to the descriptions
-can be measured against it.
+The A/B is the experiment Phase 5 argued for: same model, same cases, the only
+difference being whether each destination carries a sentence saying what it is
+for. It is marked `model` and deselected from `make test`; run it with
+`pytest -m model tests/test_router.py` when the descriptions change, because
+that is the edit it exists to catch.
 """
 
 from collections import Counter
-from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
-import yaml
 from pydantic import ValidationError
 
 from config import get_model_settings
+from evals import runner
 from steward import router as router_module
 from steward.router import (
     DESCRIPTIONS,
@@ -35,18 +31,10 @@ from steward.router import (
     system_prompt,
 )
 
-CASES_PATH = Path(__file__).resolve().parents[1] / "evals" / "routing.yaml"
-
-#: Three runs per case is the project's floor for a nondeterministic model.
-RUNS = 3
-
-
-def load_cases() -> list[dict[str, Any]]:
-    data = yaml.safe_load(CASES_PATH.read_text(encoding="utf-8"))
-    return list(data["cases"])
-
-
-CASES = load_cases()
+#: The routing slice of the shared case file. Phase 6's twenty cases live there
+#: now rather than in a file of their own, so there is one place to add a case.
+_ALL, _TODAY, RUNS = runner.load()
+CASES = [c for c in _ALL if c.kind == "routing"]
 
 
 # --- no model needed ----------------------------------------------------------
@@ -60,13 +48,13 @@ def test_every_case_is_labelled_with_a_real_destination() -> None:
     """A typo in the case file would otherwise show up as a routing failure and
     send someone looking at the prompt."""
     for case in CASES:
-        assert case["expect"] in {d.value for d in Destination}, case
+        assert case.expect in {d.value for d in Destination}, case
 
 
 def test_the_set_covers_every_destination_including_unsupported() -> None:
     """Accuracy over a set that never exercises `unsupported` would not measure
     the thing most likely to go wrong."""
-    labels = Counter(case["expect"] for case in CASES)
+    labels = Counter(case.expect for case in CASES)
 
     assert labels[Destination.unsupported.value] >= 4
     assert labels[Destination.tally.value] >= 4
@@ -134,40 +122,14 @@ def _measure(instance: Router) -> tuple[int, int, list[str]]:
     lines: list[str] = []
 
     for case in CASES:
-        got = [instance.route(case["question"]).destination.value for _ in range(RUNS)]
-        hits = sum(1 for g in got if g == case["expect"])
+        got = [instance.route(case.question).destination.value for _ in range(RUNS)]
+        hits = sum(1 for g in got if g == case.expect)
         correct += hits
         if hits == RUNS:
             unanimous += 1
         else:
-            lines.append(
-                f"    {case['expect']:<12} got {', '.join(got):<34} {case['question'][:46]}"
-            )
+            lines.append(f"    {case.expect:<12} got {', '.join(got):<34} {case.question[:46]}")
     return correct, unanimous, lines
-
-
-@pytest.mark.model
-def test_routing_accuracy_on_the_labelled_set(_endpoint: str) -> None:
-    """Phase 6's exit criterion."""
-    instance = ConstrainedJSONRouter()
-    correct, unanimous, misses = _measure(instance)
-    total = len(CASES) * RUNS
-
-    accuracy = correct / total
-    strict = unanimous / len(CASES)
-
-    print(f"\n\n  router: {instance.name}")
-    print(f"  accuracy over all runs : {correct}/{total} ({accuracy:.0%})")
-    print(f"  cases right every run  : {unanimous}/{len(CASES)} ({strict:.0%})")
-    if misses:
-        print("\n  cases that were not unanimous:")
-        print("\n".join(misses))
-    print()
-
-    # The plan's number. evals/README.md's stricter reading is reported above
-    # and asserted below it, so a regression in either is visible.
-    assert accuracy >= 0.90, f"routing accuracy {accuracy:.0%} is below the 90% exit criterion"
-    assert strict >= 0.90, f"only {strict:.0%} of cases routed the same way on every run"
 
 
 @pytest.mark.model

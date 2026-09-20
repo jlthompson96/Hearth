@@ -239,14 +239,31 @@ genuine 8B at Q4 means re-measuring every number in `evals/results/`.
 make dev          # docker compose up + backend + frontend
 make migrate      # alembic upgrade head
 make seed         # load the golden fixture dataset
-make test         # pytest
-make eval         # run the behavioural case file     (Phase 7)
+make test         # pytest — fast, no model, run it after every edit
+make eval         # the behavioural case file — needs the model, takes minutes
 make lint         # ruff + mypy + tsc
 ```
 
 Also available: `make up` / `make down` / `make logs` for infrastructure alone, `make fmt`
-to apply formatting, `make freeze` to resolve `requirements.txt`'s ranges into exact pins,
-and `make clean` to remove both toolchains.
+to apply formatting, `make hooks` to install the pre-commit reminder, `make freeze` to
+resolve `requirements.txt`'s ranges into exact pins, and `make clean` to remove both
+toolchains.
+
+## Measuring behaviour
+
+`make test` and `make eval` answer different questions and are deliberately separate.
+`make test` asserts facts, needs no model, and finishes in about three seconds — it is the
+loop you run after every edit. `make eval` measures behaviour against the real model over
+`evals/cases.yaml`, three runs per case, and records the result to `evals/results/<sha>.json`.
+
+The split matters because a behavioural number is not a test result. It belongs to a model
+and a day, it is a rate rather than a pass, and letting it into the fast loop makes the
+fast loop slow — which is how it stops being run. See [evals/README.md](evals/README.md).
+
+`make hooks` installs a pre-commit reminder that notices when you stage a change to
+`prompts/` or `agents/` — the files whose effect is only visible as a pass rate — and tells
+you to re-measure. It blocks nothing and runs nothing: a hook that costs ten minutes is a
+hook that gets bypassed.
 
 The commands whose phase has not landed fail with a message saying so rather than a
 stack trace.

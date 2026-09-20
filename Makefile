@@ -22,7 +22,7 @@ export
 
 API_PORT ?= 8000
 
-.PHONY: dev migrate seed test eval lint fmt install up down logs freeze clean
+.PHONY: dev migrate seed test eval lint fmt install up down logs freeze clean hooks
 
 ## dev — docker compose up + backend + frontend
 dev: install up
@@ -49,6 +49,11 @@ test: install
 eval: install
 	@test -f evals/cases.yaml || { echo "The case file lands in Phase 7 (docs/plan.md)."; exit 1; }
 	$(BIN)/pytest evals -p no:cacheprovider
+
+## hooks — point git at .githooks (tracked, unlike .git/hooks)
+hooks:
+	git config core.hooksPath .githooks
+	@echo "pre-commit installed: warns when prompts/ or agents/ change without a fresh eval run"
 
 ## lint — ruff + mypy
 lint: install
