@@ -17,6 +17,7 @@ export type ChatEvent =
   | { type: 'token'; text: string; provisional: boolean }
   | { type: 'tool'; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; name: string; result: string }
+  | { type: 'refused'; signal: string; message: string }
   | { type: 'done'; reason: string }
   | { type: 'error'; detail: string }
 
@@ -50,6 +51,12 @@ function parseFrame(frame: string): ChatEvent | null {
           type: 'tool_result',
           name: String(payload.name ?? ''),
           result: String(payload.result ?? ''),
+        }
+      case 'refused':
+        return {
+          type: 'refused',
+          signal: String(payload.signal ?? 'unknown'),
+          message: String(payload.message ?? ''),
         }
       case 'done':
         return { type: 'done', reason: String(payload.reason ?? 'complete') }

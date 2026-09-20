@@ -98,3 +98,60 @@ def get_lift_progression(
         sessions=sessions,
         change=change,
     )
+
+
+class UnknownMetricError(LookupError):
+    """Same reasoning as UnknownExerciseError: "you have not recorded this"
+    and "this did not move" are different answers."""
+
+
+@dataclass(frozen=True)
+class MetricPoint:
+    as_of: dt.date
+    value: Decimal
+
+
+@dataclass(frozen=True)
+class MetricTrend:
+    metric: str
+    unit: str | None
+    start: dt.date
+    end: dt.date
+    points: tuple[MetricPoint, ...]
+    change: Decimal | None
+
+
+def get_body_metric_trend(
+    conn: sa.Connection, metric: str, start: dt.date, end: dt.date
+) -> MetricTrend:
+    """One recorded body measurement across a period, oldest first.
+
+    Values are returned exactly as recorded, like lifted weights and for the
+    same reason: quietly rounding 82.500 kg to 82.5 loses precision in the one
+    place the person tracking it would notice.
+    """
+    known = conn.execute(
+        sa.text("select count(*) from body_metric where metric = :metric"),
+        {"metric": metric},
+    ).scalar_one()
+    if not known:
+        raise UnknownMetricError(metric)
+
+    rows = conn.execute(
+        sa.text(
+            "select as_of, value, unit from body_metric "
+            "where metric = :metric and as_of between :start and :end order by as_of"
+        ),
+        {"metric": metric, "start": start, "end": end},
+    ).all()
+
+    points = tuple(MetricPoint(as_of=r.as_of, value=r.value) for r in rows)
+    return MetricTrend(
+        metric=metric,
+        unit=rows[0].unit if rows else None,
+        start=start,
+        end=end,
+        # One observation is not a change of nothing; it is not enough to say.
+        change=(points[-1].value - points[0].value) if len(points) >= 2 else None,
+        points=points,
+    )

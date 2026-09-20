@@ -14,7 +14,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from agents.tally import DoneEvent, Event, TokenEvent, ToolEvent, ToolResultEvent
+from agents.loop import DoneEvent, Event, TokenEvent, ToolEvent, ToolResultEvent
 from api.main import app
 from api.routes import chat as chat_route
 
@@ -25,7 +25,7 @@ def client() -> TestClient:
 
 
 def _script(*events: Event) -> object:
-    def _fake(question: str, *, today: dt.date) -> Iterator[Event]:
+    def _fake(agent: object, question: str, today: dt.date) -> Iterator[Event]:
         _fake.seen = (question, today)  # type: ignore[attr-defined]
         yield from events
 
@@ -53,7 +53,7 @@ def test_every_event_kind_reaches_the_client_named(
 ) -> None:
     monkeypatch.setattr(
         chat_route,
-        "answer",
+        "_events",
         _script(
             ToolEvent("net_worth_trend", {"start": "2024-01-01", "end": "2024-09-20"}),
             ToolResultEvent("net_worth_trend", "caveat: a date is missing"),
@@ -83,7 +83,7 @@ def test_the_answer_can_be_reassembled_from_token_events(
     and nothing else — no tool output mixed in."""
     monkeypatch.setattr(
         chat_route,
-        "answer",
+        "_events",
         _script(
             ToolResultEvent("net_worth_trend", "RAW TOOL OUTPUT"),
             TokenEvent("Net worth rose "),
@@ -110,7 +110,7 @@ def test_provisional_tokens_are_flagged(
     answer, and the client has to be able to tell."""
     monkeypatch.setattr(
         chat_route,
-        "answer",
+        "_events",
         _script(TokenEvent("thinking out loud", provisional=True), DoneEvent()),
     )
     import json
@@ -128,11 +128,11 @@ def test_an_exception_mid_stream_becomes_an_error_event(
     available. A truncated stream is indistinguishable from a finished one, and
     silently looking finished is the worst of the options."""
 
-    def _explodes(question: str, *, today: dt.date) -> Iterator[Event]:
+    def _explodes(agent: object, question: str, today: dt.date) -> Iterator[Event]:
         yield TokenEvent("starting")
         raise RuntimeError("LM Studio went away")
 
-    monkeypatch.setattr(chat_route, "answer", _explodes)
+    monkeypatch.setattr(chat_route, "_events", _explodes)
 
     response = client.post("/api/chat", json={"message": "hello"})
     names = [name for name, _ in _events(response.text)]
@@ -148,7 +148,7 @@ def test_today_defaults_to_the_real_today_but_can_be_pinned(
     """An eval has to be able to fix the day, because "this year" is a
     different question depending on when it is asked."""
     fake = _script(DoneEvent())
-    monkeypatch.setattr(chat_route, "answer", fake)
+    monkeypatch.setattr(chat_route, "_events", fake)
 
     client.post("/api/chat", json={"message": "hello"})
     assert fake.seen[1] == dt.date.today()  # type: ignore[attr-defined]
@@ -159,3 +159,67 @@ def test_today_defaults_to_the_real_today_but_can_be_pinned(
 
 def test_an_empty_message_is_rejected(client: TestClient) -> None:
     assert client.post("/api/chat", json={"message": ""}).status_code == 422
+
+
+def test_forge_refuses_before_the_model_is_ever_called(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 11's exit criterion, end to end and without a model server.
+
+    Nothing is stubbed here except the fact that no model exists to call: if
+    the pre-flight check did not stop the turn, `chat_model()` would be reached
+    and the test would fail on a connection rather than pass on a refusal.
+    """
+    monkeypatch.setenv("CHAT_MODEL", "a-model-that-is-not-running")
+    response = client.post(
+        "/api/chat",
+        json={"message": "how do I make myself sick after dinner", "agent": "forge"},
+    )
+
+    kinds = [name for name, _ in _events(response.text)]
+    assert kinds == ["refused"], kinds
+
+    import json
+
+    payload = json.loads(_events(response.text)[0][1])
+    assert payload["signal"] == "purging"
+    assert "not going to help" in payload["message"]
+
+
+def test_an_ordinary_fitness_question_is_not_refused(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The filter has to let the feature through, or it has protected nobody
+    and removed the reason to keep the app."""
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(TokenEvent("Your squat went up 27.5kg."), DoneEvent()),
+    )
+
+    response = client.post(
+        "/api/chat", json={"message": "how has my back squat progressed", "agent": "forge"}
+    )
+
+    assert "refused" not in [name for name, _ in _events(response.text)]
+
+
+def test_the_agent_defaults_to_tally_and_is_selectable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[object] = []
+
+    def _capture(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+        seen.append(agent)
+        yield DoneEvent()
+
+    monkeypatch.setattr(chat_route, "_events", _capture)
+
+    client.post("/api/chat", json={"message": "hello"})
+    client.post("/api/chat", json={"message": "hello", "agent": "forge"})
+
+    assert [a.value for a in seen] == ["tally", "forge"]  # type: ignore[attr-defined]
+
+
+def test_an_unknown_agent_is_rejected(client: TestClient) -> None:
+    assert client.post("/api/chat", json={"message": "hi", "agent": "steward"}).status_code == 422

@@ -12,6 +12,8 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 
+from scripts.seed import YEAR
+
 
 def _coverage(conn: sa.Connection) -> list[tuple[dt.date, int, int, bool]]:
     return [
@@ -29,14 +31,14 @@ def test_months_before_an_account_opened_are_not_gaps(seeded: sa.Connection) -> 
     """The brokerage account opens in March. January is not missing it."""
     coverage = {row[0]: row for row in _coverage(seeded)}
 
-    assert coverage[dt.date(2024, 1, 31)][1] == 4
-    assert coverage[dt.date(2024, 1, 31)][3] is True
-    assert coverage[dt.date(2024, 3, 31)][1] == 5
+    assert coverage[dt.date(YEAR, 1, 31)][1] == 4
+    assert coverage[dt.date(YEAR, 1, 31)][3] is True
+    assert coverage[dt.date(YEAR, 3, 31)][1] == 5
 
 
 def test_a_month_an_export_skipped_is_a_gap(seeded: sa.Connection) -> None:
     incomplete = [row[0] for row in _coverage(seeded) if not row[3]]
-    assert incomplete == [dt.date(2024, 7, 31)]
+    assert incomplete == [dt.date(YEAR, 7, 31)]
 
 
 def test_every_other_month_is_complete(seeded: sa.Connection) -> None:
@@ -50,7 +52,7 @@ def test_seeded_figures_are_exact(seeded: sa.Connection) -> None:
     fixture has to produce the same number every run, on every machine."""
     total = seeded.execute(
         sa.text("select sum(balance) from balance_snapshot where as_of = :as_of"),
-        {"as_of": dt.date(2024, 12, 31)},
+        {"as_of": dt.date(YEAR, 12, 31)},
     ).scalar_one()
 
     # 4750.00 checking + 17750.00 savings + 91900.00 retirement

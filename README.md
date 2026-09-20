@@ -6,13 +6,14 @@ working over my own data. Everything runs on my machine.
 The rules that govern this codebase are in [CLAUDE.md](CLAUDE.md) — several of them are
 inviolable rather than preferred. The phase plan is in [docs/plan.md](docs/plan.md).
 
-**Status: Phase 5 complete.** Tally answers questions about your own finances over the
-Phase 3 tools, streaming to a chat UI over SSE. Ask "how has my net worth moved this
-year" and you get the figure the tool computed, to the cent, with the coverage gaps
-stated before the trend.
+**Status: Phases 5 and 11 complete.** Two specialists answer over your own data,
+streaming to a chat UI over SSE — **Tally** for finances and **Forge** for training. Ask
+"how has my net worth moved this year" and you get the figure the tool computed, to the
+cent, with the coverage gaps stated before the trend.
 
-Per docs/plan.md this is a legitimate stopping point: one agent over your own data is
-most of the value. Phase 6 adds the Steward and a second specialist behind it.
+You pick the specialist by hand for now. Phase 6 puts the Steward in front of them and
+chooses for you; until it exists, saying which agent you are talking to is honest where a
+silent guess would not be.
 
 ## Prerequisites
 
@@ -107,15 +108,17 @@ A native cluster is not a service and does not survive a reboot. `make up` start
 
 ## What the tools do
 
-Four functions, all pure Python over fixed parameterized queries, all running as the
-read-only role:
+Five functions, all pure Python over fixed parameterized queries, all running as the
+read-only role. Each is exposed to exactly one agent (CLAUDE.md, rule 11), so a finance
+turn never pays for a schema it will not call:
 
-| Function | Answers |
-|---|---|
-| `get_balance_history` | one account across a period |
-| `get_net_worth_trend` | the total across all accounts, **with coverage** |
-| `get_allocation` | holdings by symbol, with percentages, on a given date |
-| `get_lift_progression` | heaviest set per session for one lift, with estimated 1RM |
+| Function | Answers | Agent |
+|---|---|---|
+| `get_balance_history` | one account across a period | Tally |
+| `get_net_worth_trend` | the total across all accounts, **with coverage** | Tally |
+| `get_allocation` | holdings by symbol, with percentages, on a given date | Tally |
+| `get_lift_progression` | heaviest set per session for one lift, with estimated 1RM | Forge |
+| `get_body_metric_trend` | one recorded body measurement across a period | Forge |
 
 The model picks the function and its arguments and receives the computed result. It never
 writes SQL and never does arithmetic — an 8B model at Q4 will produce a confident sum that
@@ -146,10 +149,29 @@ Two behaviours are load-bearing and are tested rather than hoped for:
   failure, not a hypothetical: an earlier prompt had it answer "your net worth has not
   changed this year" for a year with no snapshots at all.
 
-**The golden fixture is a 2024 dataset.** Asked "this year" on today's date it will
-correctly tell you there is no data. Pin the day with `{"today": "2024-09-20"}` on
-`POST /api/chat` to ask it about the fixture's year — the agent never defaults the date,
-so the assumption is always the caller's and always visible.
+**The fixture is seeded in the current year**, so "this year" reaches data on the day you
+ask. Set `HEARTH_FIXTURE_YEAR` before `make seed` to pin it instead — the figures do not
+move between years, only the dates and the ids derived from them. The agents never default
+the date themselves: `today` is a required argument, so the assumption is always the
+caller's and always visible.
+
+## Asking Forge
+
+Forge reports what you logged: the heaviest working set per session for a named lift with
+an estimated 1RM, and any body measurement you have recorded. It is not a coach — it does
+not write programming or prescribe loads, because it does not know your injuries or your
+sleep, and a 4B model guessing at those is worth less than nothing.
+
+**A pre-flight check runs before the model.** Questions about purging, compensating for
+food with exercise, starvation-level intake, or weight loss at a rate that is not
+survivable are refused by `agents/preflight.py` and never reach inference. That ordering
+is the design: the refusal is a `return`, not something the model is asked to produce and
+might not (CLAUDE.md, rule 7).
+
+It is narrow on purpose. Wanting to lose weight is ordinary and passes; tracking body mass
+is the feature. Sixteen of the filter's tests exist to prove ordinary training questions
+get through, because a filter that refuses a lifter asking about their squat has not been
+made safer — it has been made useless, and a useless filter gets switched off.
 
 ## Running the model
 

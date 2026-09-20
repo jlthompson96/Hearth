@@ -30,7 +30,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ask Tally a question; streams the answer as SSE */
+        /** Ask a specialist a question; streams the answer as SSE */
         post: operations["post_chat_api_chat_post"];
         delete?: never;
         options?: never;
@@ -43,12 +43,20 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * Agent
+         * @description The specialists. Phase 6's router classifies into exactly this set.
+         * @enum {string}
+         */
+        Agent: "tally" | "forge";
+        /**
          * ChatRequest
          * @description Declared so the TypeScript client is generated rather than hand-written.
          */
         ChatRequest: {
             /** Message */
             message: string;
+            /** @default tally */
+            agent: components["schemas"]["Agent"];
             /** Today */
             today?: string | null;
         };

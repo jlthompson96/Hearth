@@ -75,12 +75,13 @@ that states coverage caveats. **Met**, 3/3 runs: calls `net_worth_trend` with th
 dates, reports `$38,250.00` — the figure the tool returned, to the cent — and states the
 July gap before describing the trend.
 
-**With one asterisk.** The golden fixture is a 2024 dataset and it is now 2026, so "this
-year" only reaches data when the day is pinned. The eval seam exists (`today` on the chat
-request, required by the agent, never defaulted in code) but the underlying question is
-unanswered: either the fixture gets rebased to the current year on seed, or every eval
-that says "this year" pins the date and stops testing the phrase a person would type.
-Phase 7 has to decide, because it is the phase that turns this question into cases.
+The fixture's year was the catch and is now fixed. `make seed` builds the dataset in the
+current year by default, so "this year" reaches data on the day you ask it; month ends are
+computed rather than listed, because February is not 29 days outside a leap year.
+`HEARTH_FIXTURE_YEAR` pins it when a result has to be comparable across time rather than
+merely across machines. The figures never move — opening balances and monthly steps are
+fixed, so an eval asserting an exact amount holds in any year. What moves is the dates, and
+the uuid5 ids derived from them.
 
 Tool selection was measured before the agent was written rather than assumed: 18/18 across
 six questions and three runs, with parseable dates 12/12. That is a better result than
@@ -144,12 +145,30 @@ retrieved chunk IDs logged.
 
 **Exit:** retrieval traceable per answer. Context stays within budget.
 
-## Phase 11 — Forge (2) — BLOCKED on fitness data source
+## Phase 11 — Forge (2) — DONE over the fixture; real data source still open
 
 Second specialist. Disordered-eating pre-flight check as a code-level input filter, not
 prompt text.
 
-**Exit:** refusal path tested and passing.
+**Exit:** refusal path tested and passing. **Met** — 32 tests over `agents/preflight.py`
+plus the path end to end through the API.
+
+Brought forward from its slot because Phase 6 has nothing to route between with one
+specialist, and because the agent needed only a prompt and a tool list once Tally had
+proved the shape. The block was always on a *real* fitness data source, and that is still
+open: Forge answers over the golden fixture, same as Tally.
+
+The filter is thirteen refusal cases and sixteen that must get through, and the second list
+is the longer one deliberately. A filter that refuses a lifter asking about their squat has
+not been made safer, it has been made useless, and a useless filter gets switched off by
+the person it was written for. `agents/forge.py` calls it before `chat_model()` is ever
+reached, so the refusal is a `return`, not something the model is asked to produce and
+might not.
+
+`get_body_metric_trend` was added to `tools/fitness.py` to go with it: `body_metric` was
+seeded from Phase 1 and nothing read it, and a fitness specialist that cannot tell you your
+body-mass trend is a strange thing to ship — particularly when that number is the reason
+the pre-flight check exists.
 
 ## Phase 12 — MCP connections (2–3)
 

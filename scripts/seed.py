@@ -19,7 +19,9 @@ it was entirely broken.
 """
 
 import argparse
+import calendar
 import datetime as dt
+import os
 import sys
 import uuid
 from decimal import Decimal
@@ -42,33 +44,31 @@ from db.models import (
 #: Fixed so that generated ids are identical on every machine and every run.
 NAMESPACE = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
 
-YEAR = 2024
-MONTH_ENDS = [
-    dt.date(YEAR, month, day)
-    for month, day in [
-        (1, 31),
-        (2, 29),
-        (3, 31),
-        (4, 30),
-        (5, 31),
-        (6, 30),
-        (7, 31),
-        (8, 31),
-        (9, 30),
-        (10, 31),
-        (11, 30),
-        (12, 31),
-    ]
-]
+#: The calendar year the fixture describes. It defaults to the current year so
+#: that "how has my net worth moved this year" reaches data on the day you ask
+#: it — a fixture pinned to a year in the past answers every such question with
+#: "no data", which is correct and useless.
+#:
+#: Pin it with HEARTH_FIXTURE_YEAR when a result has to be comparable across
+#: time rather than merely across machines. The figures never move: opening
+#: balances and monthly steps are fixed, so an eval asserting an exact amount
+#: holds in any year. What moves is the dates, and with them the uuid5 ids
+#: derived from them.
+YEAR = int(os.environ.get("HEARTH_FIXTURE_YEAR") or dt.date.today().year)
+
+#: Month ends, computed rather than listed: February is 29 days in a leap year
+#: and 28 otherwise, and a hardcoded table silently seeds a date that does not
+#: exist the moment the year stops being 2024.
+MONTH_ENDS = [dt.date(YEAR, month, calendar.monthrange(YEAR, month)[1]) for month in range(1, 13)]
 
 #: label -> (kind, opened_on, opening balance, monthly change)
 ACCOUNTS: dict[str, tuple[str, dt.date, str, str]] = {
-    "Everyday Checking": ("checking", dt.date(2023, 1, 1), "4200.00", "50.00"),
-    "Emergency Savings": ("savings", dt.date(2023, 1, 1), "15000.00", "250.00"),
-    "Retirement": ("retirement", dt.date(2023, 1, 1), "82000.00", "900.00"),
+    "Everyday Checking": ("checking", dt.date(YEAR - 1, 1, 1), "4200.00", "50.00"),
+    "Emergency Savings": ("savings", dt.date(YEAR - 1, 1, 1), "15000.00", "250.00"),
+    "Retirement": ("retirement", dt.date(YEAR - 1, 1, 1), "82000.00", "900.00"),
     # A liability, stored negative. Net worth is then a plain sum with no
     # kind-dependent sign juggling hidden inside a query.
-    "Credit Card": ("credit", dt.date(2023, 1, 1), "-1800.00", "50.00"),
+    "Credit Card": ("credit", dt.date(YEAR - 1, 1, 1), "-1800.00", "50.00"),
     # Opens in March: before that it is not missing data, it did not exist.
     "Brokerage": ("brokerage", dt.date(YEAR, 3, 1), "24000.00", "1100.00"),
 }

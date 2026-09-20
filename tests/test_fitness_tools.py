@@ -12,10 +12,11 @@ from decimal import Decimal
 import pytest
 import sqlalchemy as sa
 
+from scripts.seed import YEAR
 from tools.fitness import UnknownExerciseError, get_lift_progression
 
-JAN = dt.date(2024, 1, 1)
-DEC = dt.date(2024, 12, 31)
+JAN = dt.date(YEAR, 1, 1)
+DEC = dt.date(YEAR, 12, 31)
 
 
 def test_progression_returns_one_session_per_workout(seeded: sa.Connection) -> None:
@@ -70,7 +71,7 @@ def test_unknown_exercise_raises(seeded: sa.Connection) -> None:
 
 
 def test_a_narrow_window_reports_no_change(seeded: sa.Connection) -> None:
-    progression = get_lift_progression(seeded, "back squat", JAN, dt.date(2024, 2, 1))
+    progression = get_lift_progression(seeded, "back squat", JAN, dt.date(YEAR, 2, 1))
 
     assert len(progression.sessions) == 1
     assert progression.change is None

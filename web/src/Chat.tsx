@@ -1,21 +1,34 @@
 /**
- * Phase 5's chat: one thread, no history, no persistence.
+ * Phase 5's chat, with Phase 11's second specialist beside it. One thread, no
+ * history, no persistence.
  *
- * Tool calls are shown rather than hidden. On an 8B-class model the interesting
+ * The specialist is picked by hand. Phase 6 puts the Steward in front of this
+ * and chooses for you; until it exists, a control that says which agent you are
+ * talking to is honest where a silent guess would not be.
+ *
+ * Tool calls are shown rather than hidden. On a model this size the interesting
  * question about any figure is where it came from, and a line saying which tool
- * ran with which dates answers it without a tracing UI. The model log drawer of
- * the Design canvas is the grown-up version of this.
+ * ran with which arguments answers it without a tracing UI.
  */
 import { useEffect, useRef, useState } from 'react'
 
-import { streamChat, type ChatEvent } from './api/chat'
+import { streamChat, type ChatEvent, type ChatRequest } from './api/chat'
+
+type Agent = NonNullable<ChatRequest['agent']>
+
+const AGENTS: { id: Agent; label: string; placeholder: string }[] = [
+  { id: 'tally', label: 'Tally', placeholder: 'How has my net worth moved this year?' },
+  { id: 'forge', label: 'Forge', placeholder: 'How has my back squat progressed?' },
+]
 
 type ToolCall = { name: string; args: Record<string, unknown> }
 
 type Turn = {
+  agent: Agent
   question: string
   tools: ToolCall[]
   answer: string
+  refusal?: string
   error?: string
   streaming: boolean
 }
@@ -33,6 +46,7 @@ function ToolLine({ call }: { call: ToolCall }) {
 }
 
 export function Chat() {
+  const [agent, setAgent] = useState<Agent>('tally')
   const [turns, setTurns] = useState<Turn[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -41,6 +55,8 @@ export function Chat() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [turns])
+
+  const active = AGENTS.find((a) => a.id === agent) ?? AGENTS[0]
 
   async function send(event: React.FormEvent) {
     event.preventDefault()
@@ -52,14 +68,14 @@ export function Chat() {
     const index = turns.length
     setTurns((previous) => [
       ...previous,
-      { question, tools: [], answer: '', streaming: true },
+      { agent, question, tools: [], answer: '', streaming: true },
     ])
 
     const update = (change: (turn: Turn) => Turn) =>
       setTurns((previous) => previous.map((t, i) => (i === index ? change(t) : t)))
 
     try {
-      for await (const event of streamChat({ message: question })) {
+      for await (const event of streamChat({ message: question, agent })) {
         applyEvent(event, update)
       }
     } catch (error) {
@@ -72,21 +88,42 @@ export function Chat() {
 
   return (
     <section className="chat">
+      <div className="agents" role="group" aria-label="Specialist">
+        {AGENTS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={option.id === agent ? 'agent selected' : 'agent'}
+            onClick={() => setAgent(option.id)}
+            disabled={busy}
+            aria-pressed={option.id === agent}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       <div className="transcript">
         {turns.length === 0 && (
           <p className="muted empty">
-            Ask about net worth, an account balance, or how your holdings are allocated.
+            {agent === 'tally'
+              ? 'Ask about net worth, an account balance, or how your holdings are allocated.'
+              : 'Ask about a lift’s progression or a body measurement you have logged.'}
           </p>
         )}
 
         {turns.map((turn, i) => (
           <article key={i} className="turn">
-            <p className="question">{turn.question}</p>
+            <p className="question">
+              <span className="who">{turn.agent}</span>
+              {turn.question}
+            </p>
             {turn.tools.map((call, j) => (
               <ToolLine key={j} call={call} />
             ))}
             {turn.answer && <p className="answer">{turn.answer}</p>}
-            {turn.streaming && !turn.answer && <p className="muted">…</p>}
+            {turn.refusal && <p className="refusal">{turn.refusal}</p>}
+            {turn.streaming && !turn.answer && !turn.refusal && <p className="muted">…</p>}
             {turn.error && <p className="error">{turn.error}</p>}
           </article>
         ))}
@@ -97,8 +134,8 @@ export function Chat() {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="How has my net worth moved this year?"
-          aria-label="Ask Tally a question"
+          placeholder={active.placeholder}
+          aria-label={`Ask ${active.label} a question`}
           disabled={busy}
         />
         <button type="submit" disabled={busy || !draft.trim()}>
@@ -123,6 +160,11 @@ function applyEvent(event: ChatEvent, update: (change: (turn: Turn) => Turn) => 
     case 'tool_result':
       // Deliberately not rendered. The result is already reflected in the
       // answer, and showing both invites reading the raw figures instead.
+      break
+    case 'refused':
+      // Styled apart from an answer and apart from an error. It is neither: the
+      // turn stopped deliberately, before the model was called.
+      update((t) => ({ ...t, refusal: event.message }))
       break
     case 'error':
       update((t) => ({ ...t, error: event.detail }))

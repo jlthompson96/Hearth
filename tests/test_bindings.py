@@ -19,12 +19,13 @@ from contextlib import contextmanager
 import pytest
 import sqlalchemy as sa
 
+from scripts.seed import YEAR
 from tools import bindings
 from tools.bindings import TALLY_TOOLS, allocation, balance_history, net_worth_trend, schema_cost
 
-#: The golden fixture is a 2024 dataset: month ends through the year, Brokerage
-#: opening in March, and Retirement missing its July export.
-YEAR = 2024
+#: Taken from the fixture rather than restated here: the seed defaults to the
+#: current year, so a hardcoded one would pass today and fail in January.
+#: Brokerage opens in March and Retirement is missing its July export.
 FULL_YEAR = (f"{YEAR}-01-01", f"{YEAR}-12-31")
 
 
@@ -152,3 +153,84 @@ def test_an_empty_period_is_no_data_not_no_change(_bound: None) -> None:
     # It must also say where the data does live, or "no data" invites the model
     # to fill the silence.
     assert f"{YEAR}-01-31" in result
+
+
+# --- Forge's tools ------------------------------------------------------------
+
+
+def test_lift_progression_reports_sessions_and_marks_the_estimate(_bound: None) -> None:
+    """The fixture's squat climbs 2.5kg a month from 100kg. An estimated 1RM is
+    Epley applied to a working set, not something they have lifted, and saying
+    so is how nobody ends up under a bar they have never held."""
+    from tools.bindings import lift_progression
+
+    result = lift_progression.invoke(
+        {"exercise": "back squat", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
+    )
+
+    assert "back squat" in result
+    assert "100.000" in result
+    assert "est. 1RM" in result
+    assert "estimate, not a tested max" in result
+
+
+def test_an_unlogged_lift_lists_the_logged_ones(_bound: None) -> None:
+    from tools.bindings import lift_progression
+
+    result = lift_progression.invoke(
+        {"exercise": "hack squat", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
+    )
+
+    assert "has ever been logged" in result
+    assert "back squat" in result
+
+
+def test_body_metric_trend_reports_values_exactly_as_recorded(_bound: None) -> None:
+    """82.500 is not 82.5. Re-rounding a logged measurement loses precision in
+    the one place the person tracking it would notice."""
+    from tools.bindings import body_metric_trend
+
+    result = body_metric_trend.invoke(
+        {"metric": "body_mass", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
+    )
+
+    assert "82.500" in result
+    assert "kg" in result
+    assert "change over the period:" in result
+
+
+def test_an_unrecorded_metric_lists_what_is_recorded(_bound: None) -> None:
+    from tools.bindings import body_metric_trend
+
+    result = body_metric_trend.invoke(
+        {"metric": "body fat", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
+    )
+
+    assert "has been recorded" in result
+    assert "body_mass" in result
+
+
+def test_an_empty_lift_period_is_no_data_not_a_plateau(_bound: None) -> None:
+    """Same failure mode Tally had: an absence of sessions is not a stalled
+    lift, and only the tool can tell the model which one it is holding."""
+    from tools.bindings import lift_progression
+
+    result = lift_progression.invoke(
+        {"exercise": "back squat", "start": "2099-01-01", "end": "2099-12-31"}
+    )
+
+    assert "NO DATA" in result
+    assert "not a stalled lift" in result
+
+
+def test_forge_and_tally_do_not_share_tools() -> None:
+    """Rule 11: tools are scoped per agent. A fitness turn does not pay for net
+    worth schemas it will never call, and vice versa."""
+    from tools.bindings import FORGE_TOOLS
+
+    forge_names = {t.name for t in FORGE_TOOLS}
+    tally_names = {t.name for t in TALLY_TOOLS}
+
+    assert forge_names == {"lift_progression", "body_metric_trend"}
+    assert not (forge_names & tally_names)
+    print(f"\n  Forge tool schemas: ~{schema_cost(FORGE_TOOLS)} tokens")

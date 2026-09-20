@@ -12,6 +12,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 
+from scripts.seed import YEAR
 from tools.finance import (
     UnknownAccountError,
     get_allocation,
@@ -19,9 +20,9 @@ from tools.finance import (
     get_net_worth_trend,
 )
 
-JAN = dt.date(2024, 1, 1)
-DEC = dt.date(2024, 12, 31)
-GAP = dt.date(2024, 7, 31)
+JAN = dt.date(YEAR, 1, 1)
+DEC = dt.date(YEAR, 12, 31)
+GAP = dt.date(YEAR, 7, 31)
 
 
 # --- balance history ----------------------------------------------------------
@@ -63,7 +64,7 @@ def test_unknown_account_raises_rather_than_returning_nothing(seeded: sa.Connect
 
 
 def test_single_point_reports_no_change(seeded: sa.Connection) -> None:
-    history = get_balance_history(seeded, "Everyday Checking", JAN, dt.date(2024, 2, 1))
+    history = get_balance_history(seeded, "Everyday Checking", JAN, dt.date(YEAR, 2, 1))
 
     assert len(history.points) == 1
     assert history.change is None
@@ -87,7 +88,7 @@ def test_net_worth_trend_reports_the_incomplete_date(seeded: sa.Connection) -> N
 
     assert trend.coverage.incomplete_dates == (GAP,)
     assert trend.coverage.is_complete is False
-    assert trend.coverage.complete_from == dt.date(2024, 8, 31)
+    assert trend.coverage.complete_from == dt.date(YEAR, 8, 31)
 
 
 def test_the_caveat_names_the_gap(seeded: sa.Connection) -> None:
@@ -96,12 +97,12 @@ def test_the_caveat_names_the_gap(seeded: sa.Connection) -> None:
     caveat = get_net_worth_trend(seeded, JAN, DEC).coverage.caveat()
 
     assert caveat is not None
-    assert "2024-07-31" in caveat
-    assert "2024-08-31" in caveat
+    assert f"{YEAR}-07-31" in caveat
+    assert f"{YEAR}-08-31" in caveat
 
 
 def test_a_fully_covered_period_has_no_caveat(seeded: sa.Connection) -> None:
-    trend = get_net_worth_trend(seeded, dt.date(2024, 8, 1), DEC)
+    trend = get_net_worth_trend(seeded, dt.date(YEAR, 8, 1), DEC)
 
     assert trend.coverage.is_complete is True
     assert trend.coverage.incomplete_dates == ()
@@ -111,7 +112,7 @@ def test_a_fully_covered_period_has_no_caveat(seeded: sa.Connection) -> None:
 def test_a_period_with_no_complete_date_says_so(seeded: sa.Connection) -> None:
     """July alone has no complete date, so there is no date to be complete
     from and the caveat must not imply otherwise."""
-    trend = get_net_worth_trend(seeded, dt.date(2024, 7, 1), dt.date(2024, 7, 31))
+    trend = get_net_worth_trend(seeded, dt.date(YEAR, 7, 1), dt.date(YEAR, 7, 31))
 
     assert trend.coverage.complete_from is None
     caveat = trend.coverage.caveat()
@@ -147,14 +148,14 @@ def test_allocation_reports_the_date_it_actually_used(seeded: sa.Connection) -> 
     """Asking for mid-June answers with May's snapshot, and says so. Silently
     answering with a different date is how a number stops being trustworthy
     without ever being wrong."""
-    allocation = get_allocation(seeded, dt.date(2024, 6, 15))
+    allocation = get_allocation(seeded, dt.date(YEAR, 6, 15))
 
-    assert allocation.as_of_requested == dt.date(2024, 6, 15)
-    assert allocation.as_of_used == dt.date(2024, 5, 31)
+    assert allocation.as_of_requested == dt.date(YEAR, 6, 15)
+    assert allocation.as_of_used == dt.date(YEAR, 5, 31)
 
 
 def test_allocation_before_any_holdings_exist(seeded: sa.Connection) -> None:
-    allocation = get_allocation(seeded, dt.date(2024, 1, 15))
+    allocation = get_allocation(seeded, dt.date(YEAR, 1, 15))
 
     assert allocation.as_of_used is None
     assert allocation.slices == ()

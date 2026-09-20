@@ -41,6 +41,14 @@ from tools.finance import (
     get_balance_history,
     get_net_worth_trend,
 )
+from tools.fitness import (
+    LiftProgression,
+    MetricTrend,
+    UnknownExerciseError,
+    UnknownMetricError,
+    get_body_metric_trend,
+    get_lift_progression,
+)
 
 #: Dates are rendered and parsed in one format everywhere. The model is told
 #: this in the tool description and again in the prompt; at 4B it needs both.
@@ -207,3 +215,112 @@ def schema_cost(tools: list[BaseTool]) -> int:
         default=str,
     )
     return len(payload) // 4
+
+
+def _render_progression(result: LiftProgression) -> str:
+    if not result.sessions:
+        return (
+            f"NO DATA: no loaded sets of {result.exercise} recorded between "
+            f"{result.start:{ISO}} and {result.end:{ISO}}. This is missing data, "
+            f"not a stalled lift."
+        )
+    unit = result.unit or ""
+    lines = [
+        f"{result.exercise} {result.start:{ISO}} to {result.end:{ISO}} "
+        f"(heaviest working set per session)",
+        *(
+            f"  {s.performed_on:{ISO}}  {s.best_weight}{unit} x{s.reps_at_best}  "
+            f"est. 1RM {s.estimated_1rm}{unit}"
+            for s in result.sessions
+        ),
+    ]
+    if result.change is not None:
+        lines.append(f"change over the period: {result.change:+}{unit}")
+    lines.append("note: estimated 1RM is Epley, an estimate, not a tested max")
+    return "\n".join(lines)
+
+
+def _render_metric(result: MetricTrend) -> str:
+    if not result.points:
+        return (
+            f"NO DATA: no {result.metric} recorded between {result.start:{ISO}} "
+            f"and {result.end:{ISO}}. This is missing data, not an unchanged value."
+        )
+    unit = result.unit or ""
+    lines = [
+        f"{result.metric} {result.start:{ISO}} to {result.end:{ISO}}",
+        *(f"  {p.as_of:{ISO}}  {p.value}{unit}" for p in result.points),
+    ]
+    if result.change is not None:
+        lines.append(f"change over the period: {result.change:+}{unit}")
+    return "\n".join(lines)
+
+
+@tool
+def lift_progression(exercise: str, start: str, end: str) -> str:
+    """Heaviest working set per session for ONE named lift, with estimated 1RM.
+
+    Use for: strength progress on a specific exercise, "how is my squat going",
+    personal bests. Bodyweight movements carry no load and will not appear.
+    Dates are ISO yyyy-mm-dd; all three arguments are required.
+    """
+    with readonly_connection() as conn:
+        try:
+            return _render_progression(
+                get_lift_progression(
+                    conn, exercise, dt.date.fromisoformat(start), dt.date.fromisoformat(end)
+                )
+            )
+        except UnknownExerciseError:
+            known = _exercise_names()
+            return (
+                f"No lift called {exercise!r} has ever been logged. "
+                f"Logged lifts: {', '.join(known) if known else 'none'}."
+            )
+
+
+@tool
+def body_metric_trend(metric: str, start: str, end: str) -> str:
+    """One recorded body measurement over a period, e.g. metric="body_mass".
+
+    Use for: body mass or another tracked measurement over time. Reports the
+    values exactly as recorded. Dates are ISO yyyy-mm-dd; all three required.
+    """
+    with readonly_connection() as conn:
+        try:
+            return _render_metric(
+                get_body_metric_trend(
+                    conn, metric, dt.date.fromisoformat(start), dt.date.fromisoformat(end)
+                )
+            )
+        except UnknownMetricError:
+            known = _metric_names()
+            return (
+                f"No measurement called {metric!r} has been recorded. "
+                f"Recorded: {', '.join(known) if known else 'none'}."
+            )
+
+
+def _exercise_names() -> list[str]:
+    with readonly_connection() as conn:
+        return [
+            r.exercise
+            for r in conn.execute(
+                sa.text("select distinct exercise from workout_set order by exercise")
+            )
+        ]
+
+
+def _metric_names() -> list[str]:
+    with readonly_connection() as conn:
+        return [
+            r.metric
+            for r in conn.execute(
+                sa.text("select distinct metric from body_metric order by metric")
+            )
+        ]
+
+
+#: Forge's tools. Tally's three are not here, and vice versa (rule 11): a
+#: fitness turn does not pay for net worth schemas it will never call.
+FORGE_TOOLS: list[BaseTool] = [lift_progression, body_metric_trend]
