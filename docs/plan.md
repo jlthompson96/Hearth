@@ -192,12 +192,48 @@ connection smoke test and the router A/B) are deselected by default and run with
 The pre-commit hook warns and blocks nothing. A hook that costs ten minutes against a
 local model is a hook that gets bypassed with `--no-verify` inside a week.
 
-## Phase 8 — Thread history (2)
+## Phase 8 — Thread history (2) — DONE
 
 Thread list panel, full-text search, locally generated titles (one short call after turn 1,
 cap output ~10 tokens). Retention decision, not "forever" by default.
 
-**Exit:** a thread from last week is findable by a word you remember typing.
+**Exit:** a thread from last week is findable by a word you remember typing. **Met** —
+`tests/test_history.py` ages a thread by seven days and finds it by "squat", and by
+"squatting", a word that appears nowhere in it. That second search is the one that
+matters: it proves English stemming over the Phase 1 GIN index rather than a substring
+match that would pass the first. Through the live model on a throwaway database, four
+questions became four titled threads, and the search found the squat one with the matched
+word marked in its snippet.
+
+**Retention: a year from a thread's last message; pinned threads are kept.** Decided
+2026-09-21. A sweep runs at startup and whenever a thread is started, so it holds without a
+restart. Unpinning a thread idle for more than a year asks first — it would go at the next
+sweep.
+
+**The ~10-token cap needed reasoning switched off, and that was measured before it was
+written.** The model reasons for about 300 tokens before every answer, and `max_tokens`
+counts them: capped at 20 or at 32, every title call came back empty. With
+`reasoning_effort="none"`: no reasoning tokens, 9 completion tokens, 0.2s instead of 6.3s,
+and 24/24 schema-valid across eight questions and three runs, identical titles run to run.
+Titles are made from the question alone — the answer is where the figures are.
+
+The same switch is untried on the router and the specialists, each of which currently
+spends a few hundred reasoning tokens per call. Whether turning it off there costs accuracy
+is a question for `make eval`, not a guess.
+
+**A thread is a record, not context.** The model still answers each question on its own;
+earlier turns are not sent to it. Sending them is a decision about the 8,192-token window
+and about how the Steward routes a follow-up, and it is not this phase's. The chat says so
+under the composer rather than letting a follow-up look understood.
+
+**Found while testing, and deliberately not fixed here: the UI's route around the
+pre-flight check.** The UI never names an agent, so every turn goes through the Steward,
+and "how do I make myself sick after dinner" routed to `unsupported`. The pre-flight check
+lives inside Forge and never saw it: the Steward declined generically, and the thread was
+titled by the model. Phase 11's end-to-end test named `agent=forge` directly, and so never
+took the path the UI takes. Moving the check ahead of routing is the obvious fix and not a
+safe one as the filter stands — it refuses "should I purge my old credit card accounts" as
+purging, and reads "cut 500 calories a day" as a 500-calorie intake. See open questions.
 
 ## Phase 9 — Errand and egress (2)
 
@@ -286,6 +322,12 @@ transaction-level ingestion (drags in merchant categorization).
    model is chosen. It needs an MSVC build on Windows. Nothing earlier touches a vector
    column, so it can wait, but Phase 10 must install it and assert it rather than
    inheriting the test harness's warning.
+4. Where the pre-flight check runs (Phase 8 finding). It guards Forge only, and the UI
+   reaches Forge through the Steward — which sent a purging question to `unsupported`,
+   past the check. Running it ahead of routing needs the patterns narrowed first, or it
+   refuses finance questions that say "purge". Two options: narrow the patterns and run
+   the check on every turn, or run it on every destination except Tally. Either needs its
+   must-pass list extended with finance questions before it ships.
 
 **Answered:** the CSV header — Fidelity's positions export, `Portfolio_Positions_<Mon>-<DD>-<YYYY>.csv`:
 `Account name, Symbol, Description, Quantity, Last price, Last price change, Current value,

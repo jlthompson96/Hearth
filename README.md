@@ -285,6 +285,7 @@ steward/      The orchestrator. Routes each turn to a specialist.      (Phase 6)
 agents/       Tally (finance, Phase 5) and Forge (fitness, Phase 11).
 tools/        finance.py and fitness.py — every figure an agent reports.
 ingest/       CSV import and manual entry: the only writes of financial data. (Phase 2)
+history/      Stored conversations: search, titles, one-year retention.  (Phase 8)
               Errand, the one thing that leaves the house, lands in Phase 9.
 prompts/      Agent prompts as version-controlled Markdown, never inline literals.
 db/           Schema and shared column types. NUMERIC throughout.
@@ -344,7 +345,10 @@ Raw rows are kept in `import_row` exactly as they arrived, and
 `ingest.importer.renormalize()` rebuilds an import's snapshots from them alone — the
 recovery path for a normalizer bug found after the export is gone.
 
-Balances can also be entered by hand, as US currency; a liability is negative. There are no
+Balances can also be entered by hand, as US currency; a liability is negative.
+
+Conversations are stored in `thread` and `message`, searchable from the chat's thread
+panel, and kept for a year after their last message. Pinned threads are kept. There are no
 live financial connections, and there will not be.
 
 ## What leaves the machine

@@ -21,6 +21,10 @@ export type ChatEvent =
   | { type: 'refused'; signal: string; message: string }
   | { type: 'done'; reason: string }
   | { type: 'error'; detail: string }
+  // Phase 8: which thread the turn was stored in — first on every stream —
+  // and, after a new thread's first answer, the title it was given.
+  | { type: 'thread'; id: string; created: boolean }
+  | { type: 'title'; id: string; title: string }
 
 /** One SSE frame: `event: <name>` and `data: <json>`. */
 function parseFrame(frame: string): ChatEvent | null {
@@ -70,6 +74,10 @@ function parseFrame(frame: string): ChatEvent | null {
         return { type: 'done', reason: String(payload.reason ?? 'complete') }
       case 'error':
         return { type: 'error', detail: String(payload.detail ?? 'unknown error') }
+      case 'thread':
+        return { type: 'thread', id: String(payload.id ?? ''), created: Boolean(payload.created) }
+      case 'title':
+        return { type: 'title', id: String(payload.id ?? ''), title: String(payload.title ?? '') }
       default:
         return null
     }

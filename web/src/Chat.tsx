@@ -1,19 +1,28 @@
 /**
- * The Chat screen. One thread, no history, no persistence.
+ * The Chat screen, with its thread panel.
  *
- * The Steward picks the specialist, so there is no picker any more — the turn
- * is labelled with who answered it once the routing event arrives, which is
- * before the answer starts streaming. Attribution after the fact would be a
- * caption; attribution first is the UI telling you where your question went.
+ * Every turn is stored as it streams (Phase 8), so a conversation survives a
+ * reload and can be found again from the panel. The first event of every
+ * stream says which thread the turn went into; a new thread's title arrives
+ * last, after the answer.
  *
- * Tool calls are shown rather than hidden. On a model this size the interesting
- * question about any figure is where it came from, and a line saying which tool
- * ran with which arguments answers it without a tracing UI.
+ * The model still answers each question on its own — earlier turns in a thread
+ * are a record, not context it is given — and the screen says so, rather than
+ * letting a follow-up look like it was understood as one.
+ *
+ * The Steward picks the specialist, so there is no picker — the turn is
+ * labelled with who answered it once the routing event arrives, which is before
+ * the answer starts streaming. Tool calls are shown rather than hidden: on a
+ * model this size the interesting question about any figure is where it came
+ * from.
  */
 import { useEffect, useRef, useState } from 'react'
 
 import { streamChat, type ChatEvent } from './api/chat'
+import { reason } from './api/http'
+import { threads, type StoredMessage } from './api/threads'
 import { withNegativesInRed } from './money'
+import { ThreadPanel } from './Threads'
 
 type ToolCall = { name: string; args: Record<string, unknown> }
 
@@ -25,6 +34,8 @@ type Turn = {
   answer: string
   refusal?: string
   error?: string
+  /** Read back from storage with no answer: the turn failed when it ran. */
+  unanswered?: boolean
   streaming: boolean
 }
 
@@ -52,15 +63,83 @@ function Attribution({ to, confidence }: { to: string; confidence?: number }) {
   )
 }
 
-export function Chat() {
+/** The open thread lives in the URL hash, so a reload lands back in it. */
+const THREAD_IN_HASH = /[?&]thread=([0-9a-f-]{36})/
+
+function threadInHash(): string | null {
+  return THREAD_IN_HASH.exec(window.location.hash)?.[1] ?? null
+}
+
+/** A stored thread, back into the turns the screen draws. */
+function toTurns(messages: StoredMessage[]): Turn[] {
+  const turns: Turn[] = []
+  for (const message of messages) {
+    if (message.role === 'user') {
+      turns.push({ question: message.content, tools: [], answer: '', unanswered: true, streaming: false })
+      continue
+    }
+    const turn = turns[turns.length - 1]
+    if (message.role !== 'assistant' || !turn) continue
+    turn.unanswered = false
+    turn.routedTo = message.agent ?? undefined
+    // A confidence is a probability, not money: a Number is fine here.
+    turn.confidence = message.confidence == null ? undefined : Number(message.confidence)
+    turn.tools = (message.tool_calls ?? []).map((c) => ({ name: c.name, args: c.args }))
+    if (message.refused) turn.refusal = message.content
+    else turn.answer = message.content
+  }
+  return turns
+}
+
+export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onTogglePanel: () => void }) {
+  const [threadId, setThreadId] = useState<string | null>(null)
   const [turns, setTurns] = useState<Turn[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [version, setVersion] = useState(0)
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [turns])
+
+  const relist = () => setVersion((n) => n + 1)
+
+  // Reopen the thread named in the URL — once, on first render, and never
+  // again: after that the URL follows the thread, not the other way round.
+  useEffect(() => {
+    const id = threadInHash()
+    if (id) void open(id)
+  }, [])
+
+  // Keep the URL naming the open thread — but only while Chat is the screen
+  // showing, or it would pull another tab's hash out from under it. replaceState
+  // rather than assigning the hash: no hashchange, no history entry per turn.
+  useEffect(() => {
+    const hash = window.location.hash
+    if (hash && hash !== '#/' && !hash.startsWith('#/?')) return
+    window.history.replaceState(null, '', threadId ? `#/?thread=${threadId}` : '#/')
+  }, [threadId])
+
+  async function open(id: string) {
+    if (busy || id === threadId) return
+    try {
+      const detail = await threads.get(id)
+      setThreadId(id)
+      setTurns(toTurns(detail.messages))
+      setFailure(null)
+    } catch (error) {
+      setFailure(reason(error))
+    }
+  }
+
+  function startNew() {
+    if (busy) return
+    setThreadId(null)
+    setTurns([])
+    setFailure(null)
+  }
 
   async function send(event: React.FormEvent) {
     event.preventDefault()
@@ -77,56 +156,83 @@ export function Chat() {
 
     try {
       // No agent named: the Steward decides.
-      for await (const event of streamChat({ message: question })) {
-        applyEvent(event, update)
+      for await (const event of streamChat({ message: question, thread_id: threadId })) {
+        if (event.type === 'thread') {
+          setThreadId(event.id)
+          if (event.created) relist()
+        } else if (event.type === 'title') {
+          relist()
+        } else {
+          applyEvent(event, update)
+        }
       }
     } catch (error) {
-      update((t) => ({ ...t, error: error instanceof Error ? error.message : String(error) }))
+      update((t) => ({ ...t, error: reason(error) }))
     } finally {
       update((t) => ({ ...t, streaming: false }))
       setBusy(false)
+      relist()
     }
   }
 
   return (
-    <section className="chat">
-      <div className="transcript">
-        {turns.length === 0 && (
-          <p className="muted empty">
-            Ask about your accounts and net worth, or about your lifts and body
-            measurements. You do not have to say which — the Steward works it out.
+    <div className={panelOpen ? 'chat-layout' : 'chat-layout collapsed'}>
+      <ThreadPanel
+        open={panelOpen}
+        onToggle={onTogglePanel}
+        current={threadId}
+        onOpen={(id) => void open(id)}
+        onNew={startNew}
+        onDeleted={(id) => id === threadId && startNew()}
+        version={version}
+      />
+
+      <section className="chat">
+        <div className="transcript">
+          {failure && <p className="error">{failure}</p>}
+          {turns.length === 0 && (
+            <p className="muted empty">
+              Ask about your accounts and net worth, or about your lifts and body
+              measurements. You do not have to say which — the Steward works it out.
+            </p>
+          )}
+
+          {turns.map((turn, i) => (
+            <article key={i} className="turn">
+              <p className="question">{turn.question}</p>
+              {turn.routedTo && <Attribution to={turn.routedTo} confidence={turn.confidence} />}
+              {turn.tools.map((call, j) => (
+                <ToolLine key={j} call={call} />
+              ))}
+              {turn.answer && <p className="answer">{withNegativesInRed(turn.answer)}</p>}
+              {turn.refusal && <p className="refusal">{turn.refusal}</p>}
+              {turn.streaming && !turn.answer && !turn.refusal && <p className="muted">…</p>}
+              {turn.unanswered && <p className="muted small">No answer was stored for this question.</p>}
+              {turn.error && <p className="error">{turn.error}</p>}
+            </article>
+          ))}
+          <div ref={endRef} />
+        </div>
+
+        <form className="composer" onSubmit={send}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="How has my net worth moved this year?"
+            aria-label="Ask a question"
+            disabled={busy}
+          />
+          <button type="submit" disabled={busy || !draft.trim()}>
+            {busy ? '…' : 'Ask'}
+          </button>
+        </form>
+        {turns.length > 0 && (
+          <p className="muted small context-note">
+            Each question is answered on its own — earlier turns here are not sent to the model.
           </p>
         )}
-
-        {turns.map((turn, i) => (
-          <article key={i} className="turn">
-            <p className="question">{turn.question}</p>
-            {turn.routedTo && <Attribution to={turn.routedTo} confidence={turn.confidence} />}
-            {turn.tools.map((call, j) => (
-              <ToolLine key={j} call={call} />
-            ))}
-            {turn.answer && <p className="answer">{withNegativesInRed(turn.answer)}</p>}
-            {turn.refusal && <p className="refusal">{turn.refusal}</p>}
-            {turn.streaming && !turn.answer && !turn.refusal && <p className="muted">…</p>}
-            {turn.error && <p className="error">{turn.error}</p>}
-          </article>
-        ))}
-        <div ref={endRef} />
-      </div>
-
-      <form className="composer" onSubmit={send}>
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="How has my net worth moved this year?"
-          aria-label="Ask a question"
-          disabled={busy}
-        />
-        <button type="submit" disabled={busy || !draft.trim()}>
-          {busy ? '…' : 'Ask'}
-        </button>
-      </form>
-    </section>
+      </section>
+    </div>
   )
 }
 
@@ -160,6 +266,10 @@ function applyEvent(event: ChatEvent, update: (change: (turn: Turn) => Turn) => 
       if (event.reason !== 'complete' && event.reason !== 'unsupported') {
         update((t) => ({ ...t, error: event.reason }))
       }
+      break
+    case 'thread':
+    case 'title':
+      // Handled by the component: they concern the thread, not the turn.
       break
   }
 }

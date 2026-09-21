@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field
 
 from api.refusals import REFUSALS
 from db.session import readonly_connection
+from db.writer import writer_connection
 from ingest import manual
-from ingest.db import writer_connection
 from ingest.errors import Refused
 from ingest.importer import fixture_loaded
 from ingest.values import ValueFormatError, parse_money

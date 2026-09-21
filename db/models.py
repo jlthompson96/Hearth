@@ -16,6 +16,7 @@ Two rules are enforced structurally rather than by good intentions:
 
 import datetime as dt
 import uuid
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     Text,
     UniqueConstraint,
     text,
@@ -307,6 +309,9 @@ class Thread(Base):
     updated_at: Mapped[timestamp]
     #: Retention is a decision, not "forever by default".
     archived_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    #: Pinned threads are exempt from retention. Everything else is deleted a
+    #: year after its last message (history.store.RETENTION).
+    pinned_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="thread", cascade="all, delete-orphan"
@@ -333,6 +338,15 @@ class Message(Base):
     agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: The tools an answer called, name and arguments — what the UI shows under
+    #: it, so a figure's source survives a reload. Results are not kept: the
+    #: answer already carries what they said.
+    tool_calls: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB, nullable=True)
+    #: Stopped by the pre-flight check rather than answered. Shown differently,
+    #: and its thread is never titled by the model.
+    refused: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    #: How sure the router was. NUMERIC, like every figure in this schema.
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
     created_at: Mapped[timestamp]
 
     thread: Mapped[Thread] = relationship(back_populates="messages")

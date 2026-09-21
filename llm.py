@@ -58,12 +58,19 @@ def chat_model(
     temperature: float = 0.0,
     max_tokens: int | None = None,
     timeout: float = 120.0,
+    reasoning_effort: str | None = None,
 ) -> ChatOpenAI:
     """The chat model, configured from the environment.
 
     Temperature defaults to zero. Local models are nondeterministic regardless
     — which is why the evals record a pass rate rather than pass/fail — but
     there is no reason to add sampling noise to a routing decision on purpose.
+
+    `reasoning_effort` is passed through to LM Studio. Left unset, the current
+    model reasons before every answer — about 300 tokens ahead of a twelve-token
+    title, measured — and `max_tokens` counts those too, so a small cap on a
+    reasoning call truncates the thinking and returns nothing. "none" turns it
+    off. Nothing sets it except where that has been measured.
     """
     _refuse_if_tracing_enabled()
     settings = get_model_settings()
@@ -75,6 +82,7 @@ def chat_model(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
+        reasoning_effort=reasoning_effort,
         # One retry. A local model that failed twice is not going to succeed on
         # the third attempt, and the turn should fail visibly instead.
         max_retries=1,

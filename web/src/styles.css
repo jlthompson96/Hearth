@@ -23,7 +23,9 @@ body {
 }
 
 main {
-  max-width: 42rem;
+  /* Wide enough for the thread panel beside a 42rem conversation. The other
+     screens hold their own measure (.screen). */
+  max-width: 64rem;
   margin: 0 auto;
   padding: 2.5rem 1.5rem 1.5rem;
   min-height: 100vh;
@@ -271,7 +273,10 @@ h1 {
 
 .view[hidden] { display: none; }
 
-.screen { padding: 1.5rem 0 2rem; }
+.screen {
+  max-width: 44rem;
+  padding: 1.5rem 0 2rem;
+}
 
 .screen h2 {
   margin: 0 0 0.5rem;
@@ -485,3 +490,183 @@ code {
 .card button { align-self: flex-start; }
 
 .card .error { margin: 0; }
+
+/* --- thread panel (Phase 8) ------------------------------------------------- */
+
+.chat-layout {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  gap: 2rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-layout.collapsed { grid-template-columns: 1.75rem minmax(0, 1fr); }
+
+.chat-layout .chat { max-width: 42rem; }
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 1.25rem 0;
+  min-height: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  padding-right: 1rem;
+}
+
+.panel.closed {
+  padding-right: 0;
+  align-items: flex-start;
+}
+
+.panel-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.panel button {
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.new-thread {
+  flex: 1;
+  padding: 0.4375rem 0.75rem;
+  font-weight: 600;
+}
+
+.panel-toggle {
+  padding: 0.25rem 0.5rem;
+  color: var(--muted) !important;
+  line-height: 1.2;
+}
+
+.thread-search {
+  padding: 0.4375rem 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.thread-search:focus {
+  outline: none;
+  border-color: var(--muted);
+}
+
+.threads {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thread {
+  position: relative;
+  border-radius: 0.375rem;
+}
+
+.thread + .thread { margin-top: 0.125rem; }
+
+.thread.active,
+.thread:hover { background: var(--raised); }
+
+.panel .thread-open {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: none;
+  background: none;
+  text-align: left;
+}
+
+.thread-title {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-title em { color: var(--muted); }
+
+.pin-mark {
+  flex-shrink: 0;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--up);
+}
+
+.thread-date {
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+
+.snippet {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.snippet mark {
+  background: none;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Actions appear on hover and for the open thread, so the list stays quiet. */
+.thread-actions {
+  display: none;
+  gap: 0.25rem;
+  padding: 0 0.5rem 0.5rem;
+}
+
+.thread:hover .thread-actions,
+.thread.active .thread-actions,
+.thread:focus-within .thread-actions { display: flex; }
+
+.panel .thread-actions .quiet {
+  padding: 0.0625rem 0.4375rem;
+  background: none;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.panel .thread-actions .quiet:hover { color: var(--fg); }
+
+.retention {
+  margin: 0.5rem 0 0;
+  line-height: 1.5;
+}
+
+.context-note {
+  margin: 0.5rem 0 0;
+  text-align: center;
+}
+
+/* Narrow screens: the panel sits above the conversation instead of beside it. */
+@media (max-width: 720px) {
+  .chat-layout,
+  .chat-layout.collapsed { grid-template-columns: minmax(0, 1fr); gap: 0; }
+
+  .panel {
+    max-height: 40vh;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding-right: 0;
+  }
+}

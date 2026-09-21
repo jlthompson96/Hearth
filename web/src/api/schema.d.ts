@@ -38,6 +38,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Threads, or those matching a search */
+        get: operations["list_threads_api_threads_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One thread */
+        get: operations["get_thread_api_threads__thread_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete a thread now */
+        delete: operations["delete_thread_api_threads__thread_id__delete"];
+        options?: never;
+        head?: never;
+        /** Pin or unpin a thread */
+        patch: operations["change_thread_api_threads__thread_id__patch"];
+        trace?: never;
+    };
     "/api/imports/files": {
         parameters: {
             query?: never;
@@ -232,6 +268,8 @@ export interface components {
             agent?: components["schemas"]["Agent"] | null;
             /** Today */
             today?: string | null;
+            /** Thread Id */
+            thread_id?: string | null;
         };
         /** Entry */
         Entry: {
@@ -356,6 +394,102 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** SnippetPart */
+        SnippetPart: {
+            /** Text */
+            text: string;
+            /** Match */
+            match: boolean;
+        };
+        /** StoredMessage */
+        StoredMessage: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Role */
+            role: string;
+            /** Agent */
+            agent: string | null;
+            /** Content */
+            content: string;
+            /** Tool Calls */
+            tool_calls: components["schemas"]["ToolCall"][] | null;
+            /** Refused */
+            refused: boolean;
+            /** Confidence */
+            confidence: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ThreadChange */
+        ThreadChange: {
+            /** Pinned */
+            pinned: boolean;
+        };
+        /** ThreadDetail */
+        ThreadDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Pinned */
+            pinned: boolean;
+            /** Messages */
+            messages: components["schemas"]["StoredMessage"][];
+        };
+        /** ThreadListing */
+        ThreadListing: {
+            /** Retention Days */
+            retention_days: number;
+            /** Threads */
+            threads: components["schemas"]["ThreadSummary"][];
+        };
+        /** ThreadSummary */
+        ThreadSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Pinned */
+            pinned: boolean;
+            /** Snippet */
+            snippet: components["schemas"]["SnippetPart"][] | null;
+        };
+        /** ToolCall */
+        ToolCall: {
+            /** Name */
+            name: string;
+            /** Args */
+            args: {
+                [key: string]: unknown;
+            };
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -427,6 +561,185 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_threads_api_threads_get: {
+        parameters: {
+            query?: {
+                /** @description Words to search for */
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadListing"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_thread_api_threads__thread_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadDetail"];
+                };
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    delete_thread_api_threads__thread_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    change_thread_api_threads__thread_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
                 };
             };
         };

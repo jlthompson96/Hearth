@@ -1,8 +1,9 @@
 """The read-write connection, and the only one outside migrations.
 
-`db.session` holds the read-only engine every query tool uses and deliberately
-has no read-write one. Ingestion is the exception it names: writing financial
-data is the whole point of this package. Nothing here is reachable from a tool.
+`db.session` holds the read-only engine every query tool uses. This is the other
+half, kept in its own module so the asymmetry stays visible: two things write —
+ingestion (`ingest/`) and thread history (`history/`) — and neither is reachable
+from a tool. Nothing that reads on behalf of the model imports this file.
 """
 
 from collections.abc import Iterator

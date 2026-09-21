@@ -1,10 +1,10 @@
 """Database connections.
 
 Two engines, deliberately asymmetric. `readonly_engine` is what every query
-tool runs through; there is no read-write engine here at all, because nothing
-that reads on behalf of the model has any business writing. Ingestion and
-migrations build their own engine from `DATABASE_URL` where that is the whole
-point of the code.
+tool runs through; there is no read-write engine in this module at all, because
+nothing that reads on behalf of the model has any business writing. The one
+read-write engine lives in `db.writer`, used by ingestion and thread history and
+imported by nothing a tool can reach. Migrations build their own.
 
 This is rule 2's second half. The model never writes SQL, and the connection
 its answers are assembled from could not execute a write if it did.

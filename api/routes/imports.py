@@ -6,7 +6,7 @@ that already sits in `$HEARTH_DATA_DIR`; the export never travels through the
 browser, and the API has no way to reach a file anywhere else.
 
 Reads go through the read-only role, like everything else that only looks.
-Writes use `ingest.db`, the one read-write connection outside migrations.
+Writes use `db.writer`, the one read-write connection outside migrations.
 """
 
 import datetime as dt
@@ -18,8 +18,8 @@ from pydantic import BaseModel, Field
 
 from api.refusals import REFUSALS
 from db.session import readonly_connection
+from db.writer import writer_connection
 from ingest import datadir
-from ingest.db import writer_connection
 from ingest.errors import DataDirProblem
 from ingest.export import NORMALIZERS
 from ingest.importer import ImportResult, fixture_loaded, import_export, remove_import

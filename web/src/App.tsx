@@ -6,8 +6,11 @@
  *
  * The screen is in the URL hash, so a reload or a bookmark lands where you
  * were. All three stay mounted and the inactive ones are hidden rather than
- * unmounted: Chat holds its conversation in memory until Phase 8 stores it,
- * and switching tabs should not throw it away.
+ * unmounted, so switching tabs mid-answer does not cut the stream off.
+ *
+ * Side panels collapse, and whether each is open is one localStorage key read
+ * once on mount — not per route (docs/plan.md). It is a convenience: if storage
+ * is blocked or empty, every panel starts open and nothing else changes.
  *
  * The backend probe from Phase 0 stays, reduced to a dot in the header. It is
  * the first thing you want to know when an answer does not arrive.
@@ -36,6 +39,20 @@ const SCREENS = [
 
 type Screen = (typeof SCREENS)[number]['hash']
 
+const PANELS_KEY = 'hearth.panels'
+type Panels = { threads: boolean }
+const OPEN: Panels = { threads: true }
+
+function readPanels(): Panels {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(PANELS_KEY) ?? 'null')
+    if (stored && typeof stored === 'object') return { ...OPEN, ...(stored as Partial<Panels>) }
+  } catch {
+    // Blocked, private, or not JSON: fall through to the default.
+  }
+  return OPEN
+}
+
 function current(): Screen {
   return SCREENS.find((s) => s.hash === window.location.hash)?.hash ?? '#/'
 }
@@ -43,6 +60,15 @@ function current(): Screen {
 export function App() {
   const [probe, setProbe] = useState<Probe>({ state: 'checking' })
   const [screen, setScreen] = useState<Screen>(current)
+  const [panels, setPanels] = useState<Panels>(readPanels)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PANELS_KEY, JSON.stringify(panels))
+    } catch {
+      // Not remembered this time; the panel still works.
+    }
+  }, [panels])
 
   useEffect(() => {
     const follow = () => setScreen(current())
@@ -90,7 +116,10 @@ export function App() {
       </nav>
 
       <div className="view" hidden={screen !== '#/'}>
-        <Chat />
+        <Chat
+          panelOpen={panels.threads}
+          onTogglePanel={() => setPanels((p) => ({ ...p, threads: !p.threads }))}
+        />
       </div>
       <div className="view" hidden={screen !== '#/imports'}>
         <Imports active={screen === '#/imports'} />
