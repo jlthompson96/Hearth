@@ -37,7 +37,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
 from agents import forge, preflight, tally
-from agents.loop import DoneEvent, Event, RefusedEvent, RoutedEvent, TokenEvent
+from agents.loop import Detail, DoneEvent, Event, RefusedEvent, RoutedEvent, TokenEvent
 from steward.router import ConstrainedJSONRouter, Destination, Router, RoutingError
 
 #: Phase 6: an adversarial delegation-loop prompt must terminate within 6 hops.
@@ -73,6 +73,7 @@ DECLINED = (
 class StewardState(TypedDict, total=False):
     question: str
     today: dt.date
+    detail: Detail
     hops: int
     destination: Destination | None
     confidence: float
@@ -126,7 +127,9 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
         answer = agents[destination.value]
 
         handoff = False
-        for event in answer(state["question"], today=state["today"]):
+        for event in answer(
+            state["question"], today=state["today"], detail=state.get("detail", "normal")
+        ):
             if getattr(event, "handoff", False):
                 handoff = True
                 continue
@@ -177,7 +180,9 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
     return graph.compile()
 
 
-def answer(question: str, *, today: dt.date, graph: Any | None = None) -> Iterator[Event]:
+def answer(
+    question: str, *, today: dt.date, detail: Detail = "normal", graph: Any | None = None
+) -> Iterator[Event]:
     """Route `question` and stream whatever the chosen specialist produces.
 
     `today` is required here for the same reason it is in the specialists: the
@@ -195,7 +200,7 @@ def answer(question: str, *, today: dt.date, graph: Any | None = None) -> Iterat
         return
 
     compiled = graph or build()
-    state: StewardState = {"question": question, "today": today, "hops": 0}
+    state: StewardState = {"question": question, "today": today, "detail": detail, "hops": 0}
 
     # `custom` carries exactly what the nodes wrote and nothing else — no
     # framework bookkeeping reaches the SSE stream.
