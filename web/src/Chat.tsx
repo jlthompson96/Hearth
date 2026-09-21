@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { streamChat, type ChatEvent } from './api/chat'
+import { withNegativesInRed } from './money'
 
 type ToolCall = { name: string; args: Record<string, unknown> }
 
@@ -104,7 +105,7 @@ export function Chat() {
             {turn.tools.map((call, j) => (
               <ToolLine key={j} call={call} />
             ))}
-            {turn.answer && <p className="answer">{turn.answer}</p>}
+            {turn.answer && <p className="answer">{withNegativesInRed(turn.answer)}</p>}
             {turn.refusal && <p className="refusal">{turn.refusal}</p>}
             {turn.streaming && !turn.answer && !turn.refusal && <p className="muted">…</p>}
             {turn.error && <p className="error">{turn.error}</p>}

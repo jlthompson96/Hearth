@@ -15,6 +15,7 @@ database, so these tests read the same golden fixture as everything else.
 import datetime as dt
 from collections.abc import Iterator
 from contextlib import contextmanager
+from decimal import Decimal
 
 import pytest
 import sqlalchemy as sa
@@ -70,7 +71,40 @@ def test_net_worth_figures_match_the_query_result_exactly(
     rendered = net_worth_trend.invoke({"start": FULL_YEAR[0], "end": FULL_YEAR[1]})
 
     for point in computed.points:
-        assert f"{point.balance:,.2f}" in rendered
+        assert f"${point.balance:,.2f}" in rendered
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("38250.00", "$38,250.00"),
+        ("-1800.00", "-$1,800.00"),
+        ("1234567.50", "$1,234,567.50"),
+        ("0.00", "$0.00"),
+        # Decimal keeps the sign of zero. A balance of nothing is not negative.
+        ("-0.00", "$0.00"),
+    ],
+)
+def test_money_is_written_as_us_currency(value: str, expected: str) -> None:
+    """The model copies figures verbatim, so this string is the format the
+    person reads. The sign goes before the dollar sign, never after it."""
+    assert bindings._money(Decimal(value)) == expected
+
+
+def test_a_change_is_always_signed() -> None:
+    assert bindings._signed(Decimal("38250.00")) == "+$38,250.00"
+    assert bindings._signed(Decimal("-50.00")) == "-$50.00"
+
+
+def test_a_liability_reaches_the_model_as_a_negative_amount(_bound: None) -> None:
+    """The credit card is stored negative. It has to arrive as `-$1,800.00` —
+    the form the UI colours red — and not as a positive figure with the minus
+    stranded somewhere the model can drop it."""
+    result = balance_history.invoke(
+        {"account_label": "Credit Card", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
+    )
+
+    assert "-$1,800.00" in result
 
 
 def test_balance_history_for_a_named_account(_bound: None) -> None:

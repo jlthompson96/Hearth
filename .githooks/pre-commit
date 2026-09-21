@@ -1,10 +1,12 @@
 #!/bin/sh
 # Reminds you to re-measure when you change something the evals measure.
 #
-# Scoped to prompts/ and agents/ because those are the files whose effect is
-# only visible as a pass rate. A change to tools/ or db/ is caught by `make
-# test` in seconds; a change to a prompt is caught by nothing at all until
-# someone notices an answer got worse.
+# Scoped to prompts/, agents/ and tools/bindings.py because those are the files
+# whose effect is only visible as a pass rate. The bindings are there because
+# what a tool returns is prompt text too: the model reads it, and a change to how
+# a figure is written changes what the model copies. The rest of tools/ and db/
+# is caught by `make test` in seconds; a change to a prompt is caught by nothing
+# at all until someone notices an answer got worse.
 #
 # It does not run the evals. `make eval` takes ten minutes against a local
 # model, and a pre-commit hook that costs ten minutes is a hook that gets
@@ -13,7 +15,7 @@
 #
 # Install with `make hooks`.
 
-staged=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(prompts/|agents/)' || true)
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(prompts/|agents/|tools/bindings\.py$)' || true)
 [ -z "$staged" ] && exit 0
 
 sha=$(git rev-parse --short HEAD 2>/dev/null || echo "")

@@ -11,6 +11,8 @@
   --raised: #1a1714;
   --up: #7fb069;
   --down: #d1665b;
+  /* Money below zero. Brighter than --down, which marks a status, not a figure. */
+  --negative: #ef4444;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -138,6 +140,13 @@ h1 {
   color: var(--down);
   font-size: 0.875rem;
 }
+
+/* A negative amount, wherever money is shown: a liability, a fall, an
+   overdraft. Red, and nothing else about it changes — the figure stays the
+   figure, only easier to see. */
+.negative { color: var(--negative); }
+
+.money { font-variant-numeric: tabular-nums; }
 
 /* --- composer ------------------------------------------------------------ */
 

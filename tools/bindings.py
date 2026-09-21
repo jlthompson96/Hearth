@@ -56,12 +56,20 @@ ISO = "%Y-%m-%d"
 
 
 def _money(value: Decimal) -> str:
-    """Two decimal places, always signed for a change so a fall cannot be read
-    as a rise by a model skimming for digits."""
-    return f"{value:,.2f}"
+    """US currency, the sign ahead of the dollar sign: `$38,250.00`, `-$1,800.00`.
+
+    The model copies this string rather than composing one. Handed a bare
+    `38,250.00` it added the `$` itself — formatting it should not be trusted
+    with, least of all on a negative, where the sign has two places to go and
+    only one of them is right.
+    """
+    sign = "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.2f}"
 
 
 def _signed(value: Decimal | None) -> str:
+    """Always signed for a change, so a fall cannot be read as a rise by a model
+    skimming for digits."""
     if value is None:
         return "not enough data to state a change (fewer than two snapshots)"
     return f"{'+' if value >= 0 else '-'}{_money(abs(value))}"
