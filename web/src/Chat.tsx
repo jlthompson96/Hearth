@@ -6,9 +6,10 @@
  * stream says which thread the turn went into; a new thread's title arrives
  * last, after the answer.
  *
- * The model still answers each question on its own — earlier turns in a thread
- * are a record, not context it is given — and the screen says so, rather than
- * letting a follow-up look like it was understood as one.
+ * A follow-up is understood as one: the backend hands the specialist its own
+ * last few answers in the thread, so "yes" can accept what an answer offered.
+ * Asking an earlier question again (Less · Normal · More) names that question,
+ * so it is answered with the context it first had, not with what came after.
  *
  * The Steward picks the specialist, so there is no picker — the turn is
  * labelled with who answered it once the routing event arrives, which is before
@@ -37,6 +38,9 @@ const LEVELS: { detail: Detail; label: string }[] = [
 const SPECIALISTS = new Set(['tally', 'forge'])
 
 type Turn = {
+  /** The stored question's id, once the stream has said it; absent only if
+   *  the question was never stored. */
+  id?: string
   question: string
   routedTo?: string
   confidence?: number
@@ -131,7 +135,14 @@ function toTurns(messages: StoredMessage[]): Turn[] {
   const turns: Turn[] = []
   for (const message of messages) {
     if (message.role === 'user') {
-      turns.push({ question: message.content, tools: [], answer: '', unanswered: true, streaming: false })
+      turns.push({
+        id: message.id,
+        question: message.content,
+        tools: [],
+        answer: '',
+        unanswered: true,
+        streaming: false,
+      })
       continue
     }
     const turn = turns[turns.length - 1]
@@ -209,13 +220,19 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
   }
 
   /** The same question again at another level, of the specialist that answered
-   *  it — named, so it cannot be routed somewhere else the second time. */
+   *  it — named, so it cannot be routed somewhere else the second time — and
+   *  with the context it had when it was first asked. */
   async function rerun(turn: Turn, detail: Detail) {
-    if (busy || !turn.routedTo || !SPECIALISTS.has(turn.routedTo)) return
-    await ask(turn.question, detail, turn.routedTo as 'tally' | 'forge')
+    if (busy || !turn.id || !turn.routedTo || !SPECIALISTS.has(turn.routedTo)) return
+    await ask(turn.question, detail, turn.routedTo as 'tally' | 'forge', turn.id)
   }
 
-  async function ask(question: string, detail: Detail, agent?: 'tally' | 'forge') {
+  async function ask(
+    question: string,
+    detail: Detail,
+    agent?: 'tally' | 'forge',
+    rerunOf?: string,
+  ) {
     setBusy(true)
     const index = turns.length
     setTurns((previous) => [
@@ -227,9 +244,11 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
       setTurns((previous) => previous.map((t, i) => (i === index ? change(t) : t)))
 
     try {
-      for await (const event of streamChat({ message: question, thread_id: threadId, agent, detail })) {
+      const request = { message: question, thread_id: threadId, agent, detail, rerun_of: rerunOf }
+      for await (const event of streamChat(request)) {
         if (event.type === 'thread') {
           setThreadId(event.id)
+          update((t) => ({ ...t, id: event.question_id }))
           if (event.created) relist()
         } else if (event.type === 'title') {
           relist()
@@ -319,7 +338,7 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
         </form>
         {turns.length > 0 && (
           <p className="muted small context-note">
-            Each question is answered on its own — earlier turns here are not sent to the model.
+            Follow-ups work: whoever answers sees their own last few answers in this thread.
           </p>
         )}
       </section>

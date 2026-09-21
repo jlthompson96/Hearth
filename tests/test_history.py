@@ -45,6 +45,51 @@ def _age(conn: sa.Connection, thread_id: uuid.UUID, by: dt.timedelta) -> None:
     )
 
 
+# --- what a follow-up is given ---------------------------------------------------
+
+
+def test_recent_is_the_last_few_questions_and_what_came_back(conn: sa.Connection) -> None:
+    thread_id = _thread(conn, ("q1", "a1"), ("q2", "a2"), ("q3", "a3"))
+
+    got = store.recent(conn, thread_id, questions=2)
+
+    assert [(m.role, m.content) for m in got] == [
+        ("user", "q2"),
+        ("assistant", "a2"),
+        ("user", "q3"),
+        ("assistant", "a3"),
+    ]
+
+
+def test_recent_before_a_question_is_the_thread_as_it_was_then(conn: sa.Connection) -> None:
+    thread_id = _thread(conn, ("q1", "a1"), ("q2", "a2"), ("q3", "a3"))
+    q2 = next(m.id for m in store.get_thread(conn, thread_id).messages if m.content == "q2")
+
+    got = store.recent(conn, thread_id, questions=5, before=q2)
+
+    assert [m.content for m in got] == ["q1", "a1"]
+
+
+def test_recent_keeps_a_question_that_was_never_answered(conn: sa.Connection) -> None:
+    """A failed turn is part of the thread: a reply after it has nothing to
+    continue, and the caller has to be able to see that."""
+    thread_id = _thread(conn, ("q1", "a1"))
+    store.add_message(conn, thread_id, role="user", content="q2, which failed")
+
+    got = store.recent(conn, thread_id, questions=2)
+
+    assert [m.content for m in got] == ["q1", "a1", "q2, which failed"]
+
+
+def test_recent_before_a_question_from_another_thread_is_not_found(conn: sa.Connection) -> None:
+    thread_id = _thread(conn, ("q1", "a1"))
+    other = _thread(conn, ("elsewhere", "a"))
+    foreign = store.get_thread(conn, other).messages[0].id
+
+    with pytest.raises(NotFound):
+        store.recent(conn, thread_id, questions=3, before=foreign)
+
+
 # --- the exit criterion --------------------------------------------------------
 
 

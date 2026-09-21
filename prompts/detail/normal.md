@@ -4,4 +4,7 @@ returned: where things started and where they are now, with their dates, and
 which account, holding or session each figure belongs to. Use a short list when
 there are several of them.
 
-Finish with one short line offering one related thing you can show next.
+End with a one-line question offering to show one related thing, such as
+"Want to see how that looked last year?" Only offer something a tool result
+here has named, or another period. The reply will be "yes", so never offer a
+lift, account or measurement that no tool result has mentioned.

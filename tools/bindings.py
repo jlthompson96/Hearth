@@ -316,6 +316,7 @@ def lift_progression(exercise: str, start: str, end: str) -> str:
     personal bests. Bodyweight movements carry no load and will not appear.
     Dates are ISO yyyy-mm-dd; all three arguments are required.
     """
+    exercise = _as_logged(exercise)
     with readonly_connection() as conn:
         try:
             return _render_progression(
@@ -351,6 +352,25 @@ def body_metric_trend(metric: str, start: str, end: str) -> str:
                 f"No measurement called {metric!r} has been recorded. "
                 f"Recorded: {', '.join(known) if known else 'none'}."
             )
+
+
+def _spelling(name: str) -> str:
+    return " ".join(name.replace("_", " ").replace("-", " ").lower().split())
+
+
+def _as_logged(exercise: str) -> str:
+    """The logged name `exercise` means, when it differs only in how it is
+    written: case, or underscores and hyphens for spaces.
+
+    The model writes "bench_press" — `body_metric_trend` takes "body_mass", and
+    it generalises — and every such call used to cost a step on "never logged"
+    before a retry. Measured on a follow-up: three and four calls where one
+    would do, and one turn ran out of steps. This is spelling, not synonyms:
+    "bench" is not "bench press", and is still refused with the logged names.
+    """
+    wanted = _spelling(exercise)
+    matches = [name for name in _exercise_names() if _spelling(name) == wanted]
+    return matches[0] if len(matches) == 1 else exercise
 
 
 def _exercise_names() -> list[str]:

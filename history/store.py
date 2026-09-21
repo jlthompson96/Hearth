@@ -199,6 +199,21 @@ def list_threads(
     return [ThreadSummary(i, t, u, p is not None, _parts(h)) for i, t, u, p, h in rows]
 
 
+#: Every column of a message, in `StoredMessage`'s order.
+_MESSAGE_COLUMNS = (
+    Message.id,
+    Message.role,
+    Message.agent,
+    Message.content,
+    Message.tool_calls,
+    Message.refused,
+    Message.confidence,
+    Message.ungrounded,
+    Message.detail,
+    Message.created_at,
+)
+
+
 def get_thread(conn: sa.Connection, thread_id: uuid.UUID) -> ThreadDetail:
     thread = conn.execute(
         sa.select(
@@ -208,18 +223,7 @@ def get_thread(conn: sa.Connection, thread_id: uuid.UUID) -> ThreadDetail:
     if thread is None:
         raise NotFound(f"no thread {thread_id}")
     messages = conn.execute(
-        sa.select(
-            Message.id,
-            Message.role,
-            Message.agent,
-            Message.content,
-            Message.tool_calls,
-            Message.refused,
-            Message.confidence,
-            Message.ungrounded,
-            Message.detail,
-            Message.created_at,
-        )
+        sa.select(*_MESSAGE_COLUMNS)
         .where(Message.thread_id == thread_id)
         .order_by(Message.created_at, Message.id)
     ).all()
@@ -231,6 +235,47 @@ def get_thread(conn: sa.Connection, thread_id: uuid.UUID) -> ThreadDetail:
         pinned=thread.pinned_at is not None,
         messages=tuple(StoredMessage(*m) for m in messages),
     )
+
+
+def recent(
+    conn: sa.Connection,
+    thread_id: uuid.UUID,
+    *,
+    questions: int,
+    before: uuid.UUID | None = None,
+) -> list[StoredMessage]:
+    """The last `questions` questions of a thread and what came back, oldest
+    first — the raw material a follow-up's context is chosen from.
+
+    `before` names a question being asked again (the Less / Normal / More
+    control). Its context is the thread as it stood when it was first asked,
+    not as it stands now: what came after it was not there to be referred to.
+    """
+    in_thread = [Message.thread_id == thread_id]
+    if before is not None:
+        asked = conn.execute(
+            sa.select(Message.created_at).where(
+                Message.id == before, Message.thread_id == thread_id, Message.role == "user"
+            )
+        ).scalar()
+        if asked is None:
+            raise NotFound(f"no question {before} in thread {thread_id}")
+        in_thread.append(Message.created_at < asked)
+
+    earliest = conn.execute(
+        sa.select(Message.created_at)
+        .where(*in_thread, Message.role == "user")
+        .order_by(Message.created_at.desc())
+        .offset(questions - 1)
+        .limit(1)
+    ).scalar()
+    if earliest is not None:
+        in_thread.append(Message.created_at >= earliest)
+
+    rows = conn.execute(
+        sa.select(*_MESSAGE_COLUMNS).where(*in_thread).order_by(Message.created_at, Message.id)
+    ).all()
+    return [StoredMessage(*m) for m in rows]
 
 
 def _parts(headline: str) -> tuple[SnippetPart, ...]:

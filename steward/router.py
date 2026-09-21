@@ -28,6 +28,7 @@ from typing import Protocol
 from openai import ContentFilterFinishReasonError, LengthFinishReasonError
 from pydantic import BaseModel, Field
 
+from agents.conversation import Exchange, last_line
 from agents.loop import load_prompt
 from llm import structured_model
 
@@ -95,12 +96,17 @@ class Routed:
 
 
 class Router(Protocol):
-    """Swap an implementation in without touching the graph."""
+    """Swap an implementation in without touching the graph.
+
+    `previous` is the exchange the new message may be replying to, or None. A
+    router that ignores it still routes every self-contained question right; it
+    only fails the "yes" that accepts an offer.
+    """
 
     @property
     def name(self) -> str: ...
 
-    def route(self, question: str) -> Routed: ...
+    def route(self, question: str, previous: Exchange | None = None) -> Routed: ...
 
 
 def _destination_lines() -> str:
@@ -109,6 +115,26 @@ def _destination_lines() -> str:
 
 def system_prompt() -> str:
     return load_prompt("steward").format(destinations=_destination_lines())
+
+
+def message(question: str, previous: Exchange | None) -> str:
+    """What the classifier is asked to route.
+
+    One message, with the earlier exchange quoted inside it, rather than the
+    exchange replayed as chat turns: a classifier shown an assistant turn of
+    prose is being invited to continue the prose. Only the answer's last line is
+    quoted — the prompts end every answer with the offer a "yes" accepts, and
+    the figures above it are nothing a routing decision needs.
+    """
+    if previous is None:
+        return question
+    return (
+        f"Route this new message: {question}\n"
+        "\n"
+        "What came before it, only to tell what its words refer to:\n"
+        f"They asked: {previous.question}\n"
+        f"The {previous.agent} specialist answered, ending: {last_line(previous.answer)}"
+    )
 
 
 class RoutingError(RuntimeError):
@@ -146,14 +172,15 @@ class ConstrainedJSONRouter:
     def __init__(self, *, temperature: float = 0.0) -> None:
         self._temperature = temperature
 
-    def route(self, question: str) -> Routed:
+    def route(self, question: str, previous: Exchange | None = None) -> Routed:
         model = structured_model(
             Decision, temperature=self._temperature, reasoning_effort=REASONING_EFFORT
         )
+        asked = [("system", system_prompt()), ("human", message(question, previous))]
         failure: Exception | None = None
         for _ in range(ATTEMPTS):
             try:
-                decision = model.invoke([("system", system_prompt()), ("human", question)])
+                decision = model.invoke(asked)
             except _UNREADABLE as error:
                 failure = error
                 continue

@@ -83,68 +83,71 @@ def test_the_refusal_says_something_useful() -> None:
         assert word not in result.message.lower()
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        # The features themselves.
-        "how has my back squat progressed this year",
-        "what's my bench press estimated 1rm",
-        "show me my body mass trend over 2024",
-        "has my body mass gone down since January",
-        "how many workouts did I log last month",
-        "what's my heaviest set of back squat",
-        # Ordinary training and diet talk. None of this is disordered.
-        "I want to lose a few kilos before summer",
-        "I'm trying to lose 4kg in 3 months, is that reasonable",
-        "should I cut or bulk given my squat is stalling",
-        "I'm eating about 2200 calories a day right now",
-        "I burned 800 calories on the bike today",
-        "I'm doing a 16:8 intermittent fasting schedule",
-        # Gym idiom that reads alarming out of context.
-        "that last set of squats nearly made me throw up",
-        "leg day always makes me want to vomit",
-        # Mentions a food without asking to compensate for it.
-        "I had pizza last night, should I still train legs today",
-    ],
-)
+#: Training and diet talk that must get through. Reused, in pairs, by
+#: test_conversation.py: two of these read together must get through too.
+ORDINARY = [
+    # The features themselves.
+    "how has my back squat progressed this year",
+    "what's my bench press estimated 1rm",
+    "show me my body mass trend over 2024",
+    "has my body mass gone down since January",
+    "how many workouts did I log last month",
+    "what's my heaviest set of back squat",
+    # Ordinary training and diet talk. None of this is disordered.
+    "I want to lose a few kilos before summer",
+    "I'm trying to lose 4kg in 3 months, is that reasonable",
+    "should I cut or bulk given my squat is stalling",
+    "I'm eating about 2200 calories a day right now",
+    "I burned 800 calories on the bike today",
+    "I'm doing a 16:8 intermittent fasting schedule",
+    # Gym idiom that reads alarming out of context.
+    "that last set of squats nearly made me throw up",
+    "leg day always makes me want to vomit",
+    # Mentions a food without asking to compensate for it.
+    "I had pizza last night, should I still train legs today",
+]
+
+
+@pytest.mark.parametrize("text", ORDINARY)
 def test_it_lets_ordinary_questions_through(text: str) -> None:
     assert check(text) is None, f"false positive on: {text!r}"
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        # The check runs on every question now, before the Steward routes it,
-        # so it sees money questions too. Each of these tripped it before.
-        "should I purge my old credit card accounts",
-        "how do I purge old threads",
-        "if I stop eating out, how much would I save each month",
-        "my portfolio rose fast for 3 days, then dropped",
-        "how many hours do I need to work to earn my food budget",
-        "did I lose 500 pounds in 3 days on my brokerage account",
-        "what's the best way to cancel out the fees on my account",
-        "how do I work off my credit card debt faster",
-        "how has my net worth moved this year",
-        "what is my allocation in the brokerage account",
-        # And training or everyday questions that tripped it too.
-        "I eat nothing but chicken and rice on weekdays",
-        "I need to burn off some stress after that meeting",
-        "I want to cut 500 calories a day, how is my body mass trending",
-        "I burn about 600 calories a day on my commute, just curious",
-        "a 500 calorie deficit, is my body mass moving",
-        "I felt like throwing up after leg day",
-        "my doctor put me on a diuretic, will my body mass drop",
-        "I want to stop eating junk food, how is my body mass trending",
-        "purge the old imports from last year",
-        "can you purge my chat history",
-        "I stopped eating meat, has my body mass changed",
-        "my savings grew fast for 2 weeks",
-        "the market threw up a surprise this week",
-        "my portfolio lost 300 pounds in 2 days",
-        "do I earn enough to cover food",
-        "I felt like vomiting after that deadlift PR",
-    ],
-)
+#: Money and everyday questions that must get through. Reused the same way.
+EVERYDAY = [
+    # The check runs on every question now, before the Steward routes it,
+    # so it sees money questions too. Each of these tripped it before.
+    "should I purge my old credit card accounts",
+    "how do I purge old threads",
+    "if I stop eating out, how much would I save each month",
+    "my portfolio rose fast for 3 days, then dropped",
+    "how many hours do I need to work to earn my food budget",
+    "did I lose 500 pounds in 3 days on my brokerage account",
+    "what's the best way to cancel out the fees on my account",
+    "how do I work off my credit card debt faster",
+    "how has my net worth moved this year",
+    "what is my allocation in the brokerage account",
+    # And training or everyday questions that tripped it too.
+    "I eat nothing but chicken and rice on weekdays",
+    "I need to burn off some stress after that meeting",
+    "I want to cut 500 calories a day, how is my body mass trending",
+    "I burn about 600 calories a day on my commute, just curious",
+    "a 500 calorie deficit, is my body mass moving",
+    "I felt like throwing up after leg day",
+    "my doctor put me on a diuretic, will my body mass drop",
+    "I want to stop eating junk food, how is my body mass trending",
+    "purge the old imports from last year",
+    "can you purge my chat history",
+    "I stopped eating meat, has my body mass changed",
+    "my savings grew fast for 2 weeks",
+    "the market threw up a surprise this week",
+    "my portfolio lost 300 pounds in 2 days",
+    "do I earn enough to cover food",
+    "I felt like vomiting after that deadlift PR",
+]
+
+
+@pytest.mark.parametrize("text", EVERYDAY)
 def test_it_lets_money_and_everyday_questions_through(text: str) -> None:
     assert check(text) is None, f"false positive on: {text!r}"
 

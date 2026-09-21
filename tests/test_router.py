@@ -33,8 +33,10 @@ from steward.router import (
 
 #: The routing slice of the shared case file. Phase 6's twenty cases live there
 #: now rather than in a file of their own, so there is one place to add a case.
+#: The follow-ups (`route-followup-*`), which mostly carry an earlier exchange,
+#: are a set of their own and measured by `make eval`.
 _ALL, _TODAY, RUNS = runner.load()
-CASES = [c for c in _ALL if c.kind == "routing"]
+CASES = [c for c in _ALL if c.kind == "routing" and not c.id.startswith("route-followup-")]
 
 
 # --- no model needed ----------------------------------------------------------

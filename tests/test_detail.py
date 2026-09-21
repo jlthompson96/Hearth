@@ -58,8 +58,12 @@ def seen(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         def open_thread(self, conn: object, thread_id: object, *, now: object) -> Any:
             return "t", False
 
-        def add_message(self, conn: object, thread_id: object, **fields: Any) -> None:
+        def add_message(self, conn: object, thread_id: object, **fields: Any) -> str:
             captured["stored"].append(fields)
+            return "q"
+
+        def recent(self, conn: object, thread_id: object, **_: Any) -> list[Any]:
+            return []
 
         def needs_title(self, conn: object, thread_id: object) -> bool:
             return False
@@ -68,7 +72,7 @@ def seen(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             pass
 
     def _events(
-        agent: object, question: str, today: dt.date, detail: str = "normal"
+        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
     ) -> Iterator[Event]:
         captured["agent"], captured["detail"] = agent, detail
         yield TokenEvent("ok")

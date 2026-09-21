@@ -23,7 +23,9 @@ export type ChatEvent =
   | { type: 'error'; detail: string }
   // Phase 8: which thread the turn was stored in — first on every stream —
   // and, after a new thread's first answer, the title it was given.
-  | { type: 'thread'; id: string; created: boolean }
+  // `question_id` is the stored question, so it can be asked again later with
+  // the context it first had.
+  | { type: 'thread'; id: string; created: boolean; question_id: string }
   | { type: 'title'; id: string; title: string }
   // Rule 1 on the real answer: figures it stated that no tool returned.
   | { type: 'ungrounded'; figures: string[] }
@@ -77,7 +79,12 @@ function parseFrame(frame: string): ChatEvent | null {
       case 'error':
         return { type: 'error', detail: String(payload.detail ?? 'unknown error') }
       case 'thread':
-        return { type: 'thread', id: String(payload.id ?? ''), created: Boolean(payload.created) }
+        return {
+          type: 'thread',
+          id: String(payload.id ?? ''),
+          created: Boolean(payload.created),
+          question_id: String(payload.question_id ?? ''),
+        }
       case 'title':
         return { type: 'title', id: String(payload.id ?? ''), title: String(payload.title ?? '') }
       case 'ungrounded':

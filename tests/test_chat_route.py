@@ -35,8 +35,13 @@ class _MemoryStore:
     def open_thread(self, conn: object, thread_id: uuid.UUID | None, *, now: object) -> Any:
         return thread_id or uuid.uuid4(), thread_id is None
 
-    def add_message(self, conn: object, thread_id: uuid.UUID, **fields: Any) -> None:
+    def add_message(self, conn: object, thread_id: uuid.UUID, **fields: Any) -> uuid.UUID:
         self.messages.append(fields)
+        return uuid.uuid4()
+
+    def recent(self, conn: object, thread_id: uuid.UUID, **_: Any) -> list[Any]:
+        # Follow-ups are tested against the real store in test_threads_route.py.
+        return []
 
     def needs_title(self, conn: object, thread_id: uuid.UUID) -> bool:
         return thread_id not in self.titles
@@ -61,7 +66,7 @@ def client() -> TestClient:
 
 def _script(*events: Event) -> object:
     def _fake(
-        agent: object, question: str, today: dt.date, detail: str = "normal"
+        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
     ) -> Iterator[Event]:
         _fake.seen = (question, today)  # type: ignore[attr-defined]
         yield from events
@@ -169,7 +174,7 @@ def test_an_exception_mid_stream_becomes_an_error_event(
     silently looking finished is the worst of the options."""
 
     def _explodes(
-        agent: object, question: str, today: dt.date, detail: str = "normal"
+        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
     ) -> Iterator[Event]:
         yield TokenEvent("starting")
         raise RuntimeError("LM Studio went away")
@@ -252,7 +257,7 @@ def test_the_agent_defaults_to_routing_and_is_still_selectable(
     seen: list[object] = []
 
     def _capture(
-        agent: object, question: str, today: dt.date, detail: str = "normal"
+        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
     ) -> Iterator[Event]:
         seen.append(agent)
         yield DoneEvent()
@@ -277,7 +282,7 @@ def test_no_agent_routes_through_the_steward(
     seen: list[object] = []
 
     def _capture(
-        agent: object, question: str, today: dt.date, detail: str = "normal"
+        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
     ) -> Iterator[Event]:
         seen.append(agent)
         yield DoneEvent()
@@ -297,7 +302,7 @@ def test_a_named_agent_still_bypasses_routing(
     seen: list[object] = []
 
     def _capture(
-        agent: object, question: str, today: dt.date, detail: str = "normal"
+        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
     ) -> Iterator[Event]:
         seen.append(agent)
         yield DoneEvent()
@@ -358,8 +363,14 @@ def test_a_turn_is_stored_as_question_then_answer_with_its_tools(
     assert (question["role"], question["content"]) == ("user", "how has my net worth moved")
     assert answer["content"] == "It rose $38,250.00."
     assert answer["agent"] == "tally"
+    # The result is kept beside its call: a follow-up that repeats a figure is
+    # checked against it.
     assert answer["tool_calls"] == [
-        {"name": "net_worth_trend", "args": {"start": "2026-01-01", "end": "2026-09-21"}}
+        {
+            "name": "net_worth_trend",
+            "args": {"start": "2026-01-01", "end": "2026-09-21"},
+            "result": "RAW TOOL OUTPUT",
+        }
     ]
     # Tool output is not the answer, and a provisional token was never part of it.
     assert "RAW TOOL OUTPUT" not in answer["content"] and "thinking" not in answer["content"]
@@ -391,7 +402,7 @@ def test_an_answer_that_failed_is_not_stored_but_the_question_is(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore
 ) -> None:
     def _explodes(
-        agent: object, question: str, today: dt.date, detail: str = "normal"
+        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
     ) -> Iterator[Event]:
         yield TokenEvent("half an ans")
         raise RuntimeError("LM Studio went away")

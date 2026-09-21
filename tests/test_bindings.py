@@ -254,6 +254,32 @@ def test_an_unlogged_lift_lists_the_logged_ones(_bound: None) -> None:
     assert "back squat" in result
 
 
+@pytest.mark.parametrize("written", ["bench_press", "Bench Press", "bench-press", " bench  press "])
+def test_a_lift_written_differently_is_the_lift_that_was_logged(_bound: None, written: str) -> None:
+    """The model writes identifiers — "bench_press" — and each one used to cost
+    a step on "never logged" before it retried with a space."""
+    from tools.bindings import lift_progression
+
+    result = lift_progression.invoke(
+        {"exercise": written, "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
+    )
+
+    assert "has ever been logged" not in result
+    assert "bench press" in result and "70.000" in result
+
+
+def test_spelling_is_forgiven_but_a_different_word_is_not(_bound: None) -> None:
+    """ "bench" might be the bench press; it might not. That is a guess, and the
+    tool lists the logged names rather than making it."""
+    from tools.bindings import lift_progression
+
+    result = lift_progression.invoke(
+        {"exercise": "bench", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
+    )
+
+    assert "has ever been logged" in result
+
+
 def test_body_metric_trend_reports_values_exactly_as_recorded(_bound: None) -> None:
     """82.500 is not 82.5. Re-rounding a logged measurement loses precision in
     the one place the person tracking it would notice."""

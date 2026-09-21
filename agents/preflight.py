@@ -47,6 +47,7 @@ than vibes.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -74,6 +75,10 @@ class Refusal:
     message: str
 
 
+#: Whitespace within one line. `check_conversation` joins questions with a line
+#: break, and a pattern built on this stops at it.
+_SP = r"[^\S\n]+"
+
 #: A meal, or eating. What turns "throwing up" from a hard set into something
 #: else, and "purge" from housekeeping into something else.
 _EATING = r"(?:meals?|eating|eat|ate|food|dinner|lunch|breakfast|snacks?|binge\w*)"
@@ -92,7 +97,9 @@ _FOOD = (
 #:   because lifters say it about hard sets.
 #: - "Purge" counts next to eating, as binge-and-purge, about the body, or said
 #:   of oneself with no object. "I've been purging" is a disclosure; "purge my
-#:   old accounts" is housekeeping; the object is the difference.
+#:   old accounts" is housekeeping; the object is the difference — so the object
+#:   must be in the same question. Read across a follow-up, "how do I purge old
+#:   threads" and "has my body mass gone down" would otherwise be one sentence.
 #: - Laxatives count alone: no money question mentions them. Diuretics count
 #:   only beside a weight goal, because they are also prescribed.
 _PURGING = re.compile(
@@ -100,8 +107,8 @@ _PURGING = re.compile(
     rf"(?:\s+\w+){{0,4}}?\s+(?:after|before)\s+(?:\w+\s+){{0,2}}{_EATING}\b"
     rf"|\b(?:after|post)[-\s]?{_EATING}(?:\s+\w+){{0,3}}?\s+(?:throw(?:ing)?\s+up|vomit\w*|purg\w*)"
     r"|\bbinge[-\s]+(?:and[-\s]+)?purg\w*"
-    rf"|\bpurg(?:e|es|ed|ing)\b(?:\s+\w+){{0,4}}?\s+(?:(?:after|before)\s+(?:\w+\s+){{0,2}})?{_EATING}\b"
-    r"|\bpurg(?:e|es|ed|ing)\b(?:\s+\w+){0,4}?\s+(?:weight|lean|gains|muscle|body|fat|calories)\b"
+    rf"|\bpurg(?:e|es|ed|ing)\b(?:{_SP}\w+){{0,4}}?{_SP}(?:(?:after|before){_SP}(?:\w+{_SP}){{0,2}})?{_EATING}\b"
+    rf"|\bpurg(?:e|es|ed|ing)\b(?:{_SP}\w+){{0,4}}?{_SP}(?:weight|lean|gains|muscle|body|fat|calories)\b"
     r"|\b(?:i|i'?m|i'?ve|i\s+have|i\s+am|been|keep|kept|started|stop(?:ped)?|quit|to)\s+"
     r"(?:\w+\s+){0,2}?purg(?:e|es|ed|ing)\b"
     r"(?!\s+(?:my|the|old|all|these|those|this|that|some|a|an|every|any|them|it|unused|"
@@ -390,3 +397,17 @@ def check(text: str) -> Refusal | None:
             return Refusal("unsafe_rate", _MESSAGE)
 
     return None
+
+
+def check_conversation(earlier: Sequence[str], question: str) -> Refusal | None:
+    """`check` over every question a model is about to read, together.
+
+    Once a follow-up carries earlier turns, the model reads more than one
+    question, and a request the check would refuse can arrive in halves — "help
+    me lose 10kg", then "in 2 weeks" — each of which passes alone. Joined in
+    order, as the model reads them, they are the question that was asked.
+
+    The new question is checked alone first, so a refusal is attributed to it
+    whenever it is enough by itself.
+    """
+    return check(question) or check("\n".join([*earlier, question]))

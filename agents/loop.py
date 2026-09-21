@@ -19,7 +19,7 @@ out to be a tool call, so a consumer can drop it rather than leaving it on scree
 as though it were the answer.
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -28,6 +28,7 @@ from typing import Any, Literal, get_args
 from langchain_core.messages import AIMessageChunk, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
 
+from agents.conversation import Exchange
 from llm import chat_model
 
 PROMPTS = Path(__file__).resolve().parents[1] / "prompts"
@@ -113,15 +114,27 @@ def detail_prompt(detail: Detail) -> str:
     return load_prompt(f"detail/{detail}").strip()
 
 
-def run(*, system: str, question: str, tools: list[BaseTool]) -> Iterator[Event]:
-    """Drive one turn to an answer, yielding events as they happen."""
+def run(
+    *,
+    system: str,
+    question: str,
+    tools: list[BaseTool],
+    history: Sequence[Exchange] = (),
+) -> Iterator[Event]:
+    """Drive one turn to an answer, yielding events as they happen.
+
+    `history` is the earlier exchanges this specialist is shown, already chosen
+    by `conversation.window`. They go in as the questions and answers they were
+    — not their tool results, which are the bulk of a turn and which the model
+    is told to fetch again rather than remember.
+    """
     model = chat_model().bind_tools(tools)
     by_name = {t.name: t for t in tools}
 
-    conversation: list[tuple[str, str] | BaseMessage] = [
-        ("system", system),
-        ("human", question),
-    ]
+    conversation: list[tuple[str, str] | BaseMessage] = [("system", system)]
+    for exchange in history:
+        conversation += [("human", exchange.question), ("ai", exchange.answer)]
+    conversation.append(("human", question))
 
     for _step in range(MAX_STEPS):
         gathered: AIMessageChunk | None = None

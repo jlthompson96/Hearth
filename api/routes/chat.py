@@ -16,10 +16,12 @@ written when the stream finishes; and a new thread gets its title last, from one
 short model call. No connection is held open across a model call — each write
 is its own short transaction.
 
-The model still sees one question at a time. A thread is a record you can read
-and search, not context the model is given: earlier turns are not sent. That is
-a decision with a cost in the 8,192-token window and in routing, and it is not
-this phase's to make.
+A follow-up carries the thread's last few turns. They are read here, before the
+new question is stored, and handed on whole; which of them any model sees is
+decided in `agents.conversation` — the router the last exchange, each
+specialist its own recent answers, and a refused turn nobody. Each tool result
+is stored beside its call, because a figure repeated from an earlier answer is
+checked against the tool result it first came from.
 
 Every event is named, because the client has to distinguish the answer from the
 tool calls that produced it. A single unnamed stream of text would render the
@@ -29,15 +31,16 @@ tool chatter into the reply.
 import datetime as dt
 import json
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from decimal import Decimal
 from enum import StrEnum
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from agents import forge, tally
+from agents.conversation import MAX_EXCHANGES, Exchange, window
 from agents.grounding import ungrounded
 from agents.loop import (
     Detail,
@@ -81,19 +84,57 @@ class ChatRequest(BaseModel):
     #: How much to say: the "Less / Normal / More" control under an answer
     #: re-asks the same question with this changed, naming the same specialist.
     detail: Detail = "normal"
+    #: The stored question this one asks again, from the same control. Its
+    #: context is the thread as it was when that question was first asked.
+    rerun_of: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _rerun_needs_its_thread(self) -> "ChatRequest":
+        if self.rerun_of is not None and self.thread_id is None:
+            raise ValueError("rerun_of names a question in a thread; thread_id is required")
+        return self
+
+
+#: How many earlier questions are read from the thread. Twice what a specialist
+#: is shown, so a conversation that moves between Tally and Forge still leaves
+#: each its own recent answers to choose from.
+LOADED = 2 * MAX_EXCHANGES
 
 
 def _sse(event: str, payload: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
+def _exchanges(messages: list[store.StoredMessage]) -> list[Exchange]:
+    """Stored messages, paired back into the questions and answers they were."""
+    exchanges: list[Exchange] = []
+    for message in messages:
+        if message.role == "user":
+            exchanges.append(Exchange(question=message.content, answer="", agent=None))
+        elif message.role == "assistant" and exchanges:
+            exchanges[-1] = Exchange(
+                question=exchanges[-1].question,
+                answer=message.content,
+                agent=message.agent,
+                refused=message.refused,
+                results=tuple(
+                    str(call["result"]) for call in message.tool_calls or [] if "result" in call
+                ),
+            )
+    return exchanges
+
+
 def _events(
-    agent: Agent | None, message: str, today: dt.date, detail: Detail = "normal"
+    agent: Agent | None,
+    message: str,
+    today: dt.date,
+    detail: Detail = "normal",
+    history: Sequence[Exchange] = (),
 ) -> Iterator[Event]:
     if agent is None:
-        return steward.answer(message, today=today, detail=detail)
+        return steward.answer(message, today=today, detail=detail, history=history)
     answer = tally.answer if agent is Agent.tally else forge.answer
-    return answer(message, today=today, detail=detail)
+    return answer(message, today=today, detail=detail, history=history)
 
 
 def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
@@ -102,14 +143,26 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
             thread_id, created = store.open_thread(
                 conn, request.thread_id, now=dt.datetime.now(dt.UTC)
             )
-            store.add_message(conn, thread_id, role="user", content=request.message)
+            # Read before the new question is stored, so it is not its own context.
+            history = (
+                []
+                if created
+                else _exchanges(
+                    store.recent(conn, thread_id, questions=LOADED, before=request.rerun_of)
+                )
+            )
+            question_id = store.add_message(conn, thread_id, role="user", content=request.message)
     except NotFound:
-        yield _sse("error", {"detail": "That thread no longer exists. Start a new one."})
+        gone = "That question is no longer in this thread." if request.rerun_of else ""
+        yield _sse("error", {"detail": gone or "That thread no longer exists. Start a new one."})
         return
     except Exception as error:  # noqa: BLE001 - the stream is the only channel back
         yield _sse("error", {"detail": f"history unavailable: {type(error).__name__}: {error}"})
         return
-    yield _sse("thread", {"id": str(thread_id), "created": created})
+    # The question's id lets the client ask it again with its own context.
+    yield _sse(
+        "thread", {"id": str(thread_id), "created": created, "question_id": str(question_id)}
+    )
 
     answer: list[str] = []
     tools: list[dict[str, object]] = []
@@ -118,7 +171,7 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
     refusal: str | None = None
     results: list[str] = []
     try:
-        for item in _events(request.agent, request.message, today, request.detail):
+        for item in _events(request.agent, request.message, today, request.detail, history):
             match item:
                 case TokenEvent(text=text, provisional=provisional):
                     if not provisional:
@@ -129,6 +182,9 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
                     yield _sse("tool", {"name": name, "args": args})
                 case ToolResultEvent(name=name, result=result):
                     results.append(result)
+                    # The loop yields each result straight after its call.
+                    if tools:
+                        tools[-1]["result"] = result
                     yield _sse("tool_result", {"name": name, "result": result})
                 case RoutedEvent(destination=destination, confidence=sure, router=name):
                     agent, confidence = destination, Decimal(str(sure)).quantize(Decimal("0.001"))
@@ -158,7 +214,12 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
     content = refusal or "".join(answer)
     # Rule 1 on the real answer: a figure no tool returned, and the question
     # did not contain, was made by the model. Flagged, since it has streamed.
-    flags = [] if refusal else ungrounded(content, [*results, request.message])
+    # The earlier turns this specialist was shown count through their tool
+    # results and questions, never their answers: an invented figure repeated
+    # is still invented.
+    shown = window(history, agent) if agent else []
+    earlier = [text for e in shown for text in (e.question, *e.results)]
+    flags = [] if refusal else ungrounded(content, [*results, request.message, *earlier])
     if flags:
         yield _sse("ungrounded", {"figures": flags})
     try:

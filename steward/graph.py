@@ -30,13 +30,14 @@ than a guard against them.
 """
 
 import datetime as dt
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any, TypedDict
 
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
 from agents import forge, preflight, tally
+from agents.conversation import Exchange, previous
 from agents.loop import Detail, DoneEvent, Event, RefusedEvent, RoutedEvent, TokenEvent
 from steward.router import ConstrainedJSONRouter, Destination, Router, RoutingError
 
@@ -74,6 +75,9 @@ class StewardState(TypedDict, total=False):
     question: str
     today: dt.date
     detail: Detail
+    #: The thread so far. The router is shown the last exchange; each
+    #: specialist chooses its own window from the rest.
+    history: Sequence[Exchange]
     hops: int
     destination: Destination | None
     confidence: float
@@ -101,7 +105,7 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
 
     def route(state: StewardState) -> StewardState:
         try:
-            decision = chosen.route(state["question"])
+            decision = chosen.route(state["question"], previous(state.get("history", ())))
         except RoutingError as failure:
             _emit(TokenEvent(UNROUTED))
             _emit(DoneEvent(f"routing failed: {failure}"))
@@ -128,7 +132,10 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
 
         handoff = False
         for event in answer(
-            state["question"], today=state["today"], detail=state.get("detail", "normal")
+            state["question"],
+            today=state["today"],
+            detail=state.get("detail", "normal"),
+            history=state.get("history", ()),
         ):
             if getattr(event, "handoff", False):
                 handoff = True
@@ -181,7 +188,12 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
 
 
 def answer(
-    question: str, *, today: dt.date, detail: Detail = "normal", graph: Any | None = None
+    question: str,
+    *,
+    today: dt.date,
+    detail: Detail = "normal",
+    history: Sequence[Exchange] = (),
+    graph: Any | None = None,
 ) -> Iterator[Event]:
     """Route `question` and stream whatever the chosen specialist produces.
 
@@ -193,14 +205,23 @@ def answer(
     # from the UI enters here and the router is a model call too. It used to
     # run only inside Forge, and the router sent "how do I make myself sick
     # after dinner" to `unsupported`, where the check never saw it. Now nothing
-    # that trips it reaches any model — not the router, not a specialist.
-    refusal = preflight.check(question)
+    # that trips it reaches any model — not the router, not a specialist. The
+    # router reads the previous question too, so the check reads it with this
+    # one; the specialist checks its own window again when it runs.
+    last = previous(history)
+    refusal = preflight.check_conversation([last.question] if last else [], question)
     if refusal is not None:
         yield RefusedEvent(refusal.signal, refusal.message)
         return
 
     compiled = graph or build()
-    state: StewardState = {"question": question, "today": today, "detail": detail, "hops": 0}
+    state: StewardState = {
+        "question": question,
+        "today": today,
+        "detail": detail,
+        "history": history,
+        "hops": 0,
+    }
 
     # `custom` carries exactly what the nodes wrote and nothing else — no
     # framework bookkeeping reaches the SSE stream.

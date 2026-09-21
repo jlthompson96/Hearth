@@ -21,8 +21,17 @@ from typing import Any
 import yaml
 
 from agents import forge, preflight, tally
+from agents.conversation import Exchange, previous, window
 from agents.grounding import ungrounded
-from agents.loop import Detail, Event, RefusedEvent, TokenEvent, ToolEvent, ToolResultEvent
+from agents.loop import (
+    Detail,
+    Event,
+    RefusedEvent,
+    RoutedEvent,
+    TokenEvent,
+    ToolEvent,
+    ToolResultEvent,
+)
 from scripts.seed import YEAR
 from steward import graph as steward
 
@@ -50,6 +59,9 @@ class Case:
     #: level every question starts at; a few pin another, because a longer
     #: answer walks through more figures and so has more ways to get one wrong.
     detail: Detail = "normal"
+    #: Earlier exchanges in the thread, scripted rather than generated: a
+    #: follow-up case measures the follow-up, not the turn before it as well.
+    history: tuple[Exchange, ...] = ()
     #: Present in the file for a reader; carried so it reaches the results.
     note: str | None = None
 
@@ -82,6 +94,8 @@ def _year(value: Any) -> Any:
         return value.replace("{year}", str(YEAR))
     if isinstance(value, list):
         return [_year(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _year(v) for k, v in value.items()}
     return value
 
 
@@ -93,6 +107,7 @@ def load() -> tuple[list[Case], dt.date, int]:
     cases = []
     for entry in raw["cases"]:
         fields = {k: _year(v) for k, v in entry.items()}
+        fields["history"] = tuple(Exchange(**e) for e in fields.get("history", []))
         cases.append(Case(**fields))
     return cases, today, runs
 
@@ -107,15 +122,20 @@ def _answer(case: Case, today: dt.date) -> Iterator[Event]:
     failure from looking identical from outside.
     """
     if case.agent is None:
-        return steward.answer(case.question, today=today, detail=case.detail)
-    return SPECIALISTS[case.agent](case.question, today=today, detail=case.detail)
+        return steward.answer(case.question, today=today, detail=case.detail, history=case.history)
+    return SPECIALISTS[case.agent](
+        case.question, today=today, detail=case.detail, history=case.history
+    )
 
 
-def _text_and_tools(case: Case, today: dt.date) -> tuple[str, list[str], str | None, list[str]]:
+def _text_and_tools(
+    case: Case, today: dt.date
+) -> tuple[str, list[str], str | None, list[str], str | None]:
     text: list[str] = []
     tools: list[str] = []
     signal: str | None = None
     results: list[str] = []
+    answered_by = case.agent
 
     for event in _answer(case, today):
         match event:
@@ -127,9 +147,11 @@ def _text_and_tools(case: Case, today: dt.date) -> tuple[str, list[str], str | N
                 signal = fired
             case ToolResultEvent(result=result):
                 results.append(result)
+            case RoutedEvent(destination=destination):
+                answered_by = destination
             case _:
                 pass
-    return "".join(text), tools, signal, results
+    return "".join(text), tools, signal, results, answered_by
 
 
 def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
@@ -137,17 +159,20 @@ def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
     if case.kind == "routing":
         from steward.router import ConstrainedJSONRouter
 
-        got = ConstrainedJSONRouter().route(case.question).destination.value
+        routed = ConstrainedJSONRouter().route(case.question, previous(case.history))
+        got = routed.destination.value
         return got == case.expect, f"routed to {got}, wanted {case.expect}"
 
     if case.kind == "refusal":
         # No model: the pre-flight check is ordinary code and runs before
         # inference, which is the whole reason this path can be asserted.
-        refusal = preflight.check(case.question)
+        # As the Steward checks it: the new question with the one before it.
+        last = previous(case.history)
+        refusal = preflight.check_conversation([last.question] if last else [], case.question)
         fired = refusal.signal if refusal else None
         return fired == case.expect_signal, f"signal {fired!r}, wanted {case.expect_signal!r}"
 
-    text, tools, _, results = _text_and_tools(case, today)
+    text, tools, _, results, answered_by = _text_and_tools(case, today)
 
     if case.kind == "tool":
         ok = case.expect_tool in tools
@@ -168,7 +193,11 @@ def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
 
     # Rule 1: the right figure being present is not enough if a wrong one is
     # present beside it. The same check the chat runs on every real answer.
-    flags = ungrounded(text, [*results, case.question])
+    # Earlier turns count through their questions and tool results, as in the
+    # chat route — never through their answers.
+    shown = window(case.history, answered_by) if answered_by else []
+    earlier = [t for e in shown for t in (e.question, *e.results)]
+    flags = ungrounded(text, [*results, case.question, *earlier])
     if flags:
         return False, f"figures no tool returned: {flags} in: {text[:160]!r}"
 

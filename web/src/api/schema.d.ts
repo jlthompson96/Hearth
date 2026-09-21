@@ -276,6 +276,8 @@ export interface components {
              * @enum {string}
              */
             detail: "brief" | "normal" | "detailed";
+            /** Rerun Of */
+            rerun_of?: string | null;
         };
         /** Entry */
         Entry: {
