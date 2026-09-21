@@ -398,6 +398,39 @@ def test_a_refused_turn_is_titled_without_the_model(
     assert memory.messages[1]["refused"] is True
 
 
+def test_a_turn_the_reader_stopped_is_not_stored_but_the_question_is(
+    monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore
+) -> None:
+    """The UI's Stop closes the connection, which closes the stream at its next
+    yield. What had streamed was never grounded-checked, so it must not be stored
+    as if it were an answer — the Stopped note on the page says exactly this."""
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(
+            ToolEvent("net_worth_trend", {"start": "2026-01-01"}),
+            ToolResultEvent("net_worth_trend", "change over the period: +$38,250.00"),
+            TokenEvent("Net worth rose $38,"),
+            TokenEvent("250.00."),
+            DoneEvent(),
+        ),
+    )
+
+    stream = chat_route._stream(
+        chat_route.ChatRequest(message="how has it moved?"), dt.date(2026, 9, 21)
+    )
+    seen = []
+    for frame in stream:
+        seen.append(frame)
+        if frame.startswith("event: token"):
+            break  # the reader pressed Stop after the first fragment
+    stream.close()
+
+    assert any(frame.startswith("event: token") for frame in seen)
+    assert [m["role"] for m in memory.messages] == ["user"]
+    assert memory.titles == {}
+
+
 def test_an_answer_that_failed_is_not_stored_but_the_question_is(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore
 ) -> None:

@@ -23,10 +23,11 @@ import { streamChat, type ChatEvent } from './api/chat'
 import { reason } from './api/http'
 import { threads, type StoredMessage } from './api/threads'
 import { settings } from './api/settings'
-import { renderAnswer } from './answer'
+import { Answer } from './answer'
+import { formatArgs, type ToolRun } from './provenance'
 import { ThreadPanel } from './Threads'
 
-type ToolCall = { name: string; args: Record<string, unknown> }
+type ToolCall = ToolRun
 
 /** How much a specialist says. "Less · Normal · More" under an answer re-asks
  *  the same question at another level, of the same specialist. */
@@ -51,6 +52,9 @@ type Turn = {
   /** Figures the answer stated that no tool returned (rule 1, checked live). */
   ungrounded?: string[]
   error?: string
+  /** The reader stopped it. What streamed is kept, but it was never checked
+   *  against the tools (rule 1) and the backend never stored it. */
+  stopped?: boolean
   /** Read back from storage with no answer: the turn failed when it ran. */
   unanswered?: boolean
   /** The level the answer was asked for; absent on answers from before the
@@ -89,10 +93,34 @@ function DetailControl({
   )
 }
 
+/** Not colour alone: the shape says "warning" to anyone who cannot see amber. */
+function WarnIcon() {
+  return (
+    <svg className="warn-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M8 1.5 15 14H1L8 1.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M8 6.25v3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="8" cy="11.75" r="0.9" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** What to try first, one per specialist's ground. Each is a question the
+ *  Steward routes without help and a tool can answer from recorded data. */
+const EXAMPLES: { agent: 'tally' | 'forge'; question: string }[] = [
+  { agent: 'tally', question: 'How has my net worth moved this year?' },
+  { agent: 'tally', question: 'What are my current positions?' },
+  { agent: 'forge', question: 'How has my body weight changed?' },
+  { agent: 'forge', question: 'How has my squat progressed?' },
+]
+
 function ToolLine({ call }: { call: ToolCall }) {
-  const args = Object.entries(call.args)
-    .map(([key, value]) => `${key}=${String(value)}`)
-    .join(' ')
+  const args = formatArgs(call.args)
   return (
     <div className="tool">
       <span className="tool-name">{call.name}</span>
@@ -172,7 +200,11 @@ function toTurns(messages: StoredMessage[]): Turn[] {
     turn.routedTo = message.agent ?? undefined
     // A confidence is a probability, not money: a Number is fine here.
     turn.confidence = message.confidence == null ? undefined : Number(message.confidence)
-    turn.tools = (message.tool_calls ?? []).map((c) => ({ name: c.name, args: c.args }))
+    turn.tools = (message.tool_calls ?? []).map((c) => ({
+      name: c.name,
+      args: c.args,
+      result: c.result ?? undefined,
+    }))
     if (message.refused) turn.refusal = message.content
     else turn.answer = message.content
     turn.ungrounded = message.ungrounded ?? undefined
@@ -181,7 +213,15 @@ function toTurns(messages: StoredMessage[]): Turn[] {
   return turns
 }
 
-export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onTogglePanel: () => void }) {
+export function Chat({
+  active,
+  panelOpen,
+  onTogglePanel,
+}: {
+  active: boolean
+  panelOpen: boolean
+  onTogglePanel: () => void
+}) {
   const [threadId, setThreadId] = useState<string | null>(null)
   const [turns, setTurns] = useState<Turn[]>([])
   const [draft, setDraft] = useState('')
@@ -189,12 +229,63 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
   const [failure, setFailure] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
   const endRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  /** The running turn's request, so Stop can end it. */
+  const abortRef = useRef<AbortController | null>(null)
+  /** Where Up/Down have walked back to through earlier questions; -1 is none. */
+  const recallAt = useRef(-1)
+  const wasBusy = useRef(false)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [turns])
 
   const relist = () => setVersion((n) => n + 1)
+
+  const stop = () => abortRef.current?.abort()
+
+  // Esc stops a turn; "/" jumps to the composer from anywhere that is not
+  // already a text field. Only while Chat is the screen showing.
+  useEffect(() => {
+    if (!active) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && busy) {
+        abortRef.current?.abort()
+      } else if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !busy) {
+        const el = document.activeElement
+        const typing =
+          el instanceof HTMLElement &&
+          (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))
+        if (!typing) {
+          event.preventDefault()
+          inputRef.current?.focus()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, busy])
+
+  // The composer is disabled while a turn runs and loses focus with it: give it
+  // back when the turn ends, so the next question needs no click.
+  useEffect(() => {
+    if (wasBusy.current && !busy && active) inputRef.current?.focus()
+    wasBusy.current = busy
+  }, [busy, active])
+
+  /** Up and Down walk back through what was asked in this thread, from an empty
+   *  composer only — never over a half-typed question. */
+  function recall(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+    if (draft !== '' && recallAt.current < 0) return
+    const asked = [...new Set(turns.map((t) => t.question).reverse())]
+    if (asked.length === 0) return
+    event.preventDefault()
+    const next =
+      event.key === 'ArrowUp' ? Math.min(recallAt.current + 1, asked.length - 1) : recallAt.current - 1
+    recallAt.current = next
+    setDraft(next < 0 ? '' : asked[next])
+  }
 
   // Reopen the thread named in the URL — once, on first render, and never
   // again: after that the URL follows the thread, not the other way round.
@@ -231,13 +322,18 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
     setFailure(null)
   }
 
-  async function send(event: React.FormEvent) {
-    event.preventDefault()
-    const question = draft.trim()
+  async function submit(text: string) {
+    const question = text.trim()
     if (!question || busy) return
     setDraft('')
+    recallAt.current = -1
     // No agent named: the Steward decides.
     await ask(question, await defaultDetail())
+  }
+
+  function send(event: React.FormEvent) {
+    event.preventDefault()
+    void submit(draft)
   }
 
   /** The same question again at another level, of the specialist that answered
@@ -255,6 +351,8 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
     rerunOf?: string,
   ) {
     setBusy(true)
+    const controller = new AbortController()
+    abortRef.current = controller
     const index = turns.length
     setTurns((previous) => [
       ...previous,
@@ -266,7 +364,7 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
 
     try {
       const request = { message: question, thread_id: threadId, agent, detail, rerun_of: rerunOf }
-      for await (const event of streamChat(request)) {
+      for await (const event of streamChat(request, controller.signal)) {
         if (event.type === 'thread') {
           setThreadId(event.id)
           update((t) => ({ ...t, id: event.question_id }))
@@ -278,8 +376,11 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
         }
       }
     } catch (error) {
-      update((t) => ({ ...t, error: reason(error) }))
+      // Stopping rejects the read; that is the reader's choice, not a failure.
+      if (controller.signal.aborted) update((t) => ({ ...t, stopped: true }))
+      else update((t) => ({ ...t, error: reason(error) }))
     } finally {
+      abortRef.current = null
       update((t) => ({ ...t, streaming: false }))
       setBusy(false)
       relist()
@@ -302,10 +403,22 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
         <div className="transcript">
           {failure && <p className="error">{failure}</p>}
           {turns.length === 0 && (
-            <p className="muted empty">
-              Ask about your accounts and net worth, or about your lifts and body
-              measurements. You do not have to say which — the Steward works it out.
-            </p>
+            <div className="empty">
+              <p className="muted">
+                Ask about your accounts and net worth, or about your lifts and body
+                measurements. You do not have to say which — the Steward works it out.
+              </p>
+              <ul className="examples" aria-label="Example questions">
+                {EXAMPLES.map(({ agent, question }) => (
+                  <li key={question}>
+                    <button type="button" disabled={busy} onClick={() => void submit(question)}>
+                      <span className={`who ${agent}`}>{agent}</span>
+                      {question}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {turns.map((turn, i) => (
@@ -322,21 +435,48 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
               {turn.tools.map((call, j) => (
                 <ToolLine key={j} call={call} />
               ))}
-              {turn.answer && <p className="answer">{renderAnswer(turn.answer)}</p>}
+              {turn.answer && <Answer text={turn.answer} ungrounded={turn.ungrounded} tools={turn.tools} />}
               {turn.ungrounded && turn.ungrounded.length > 0 && (
-                <p className="ungrounded">
-                  Not found in any tool result: {turn.ungrounded.join(', ')}. Treat{' '}
-                  {turn.ungrounded.length === 1 ? 'it' : 'them'} as unverified — every figure
-                  should come from a tool.
-                </p>
+                <div className="ungrounded" role="status">
+                  <WarnIcon />
+                  <p>
+                    <strong>Unverified {turn.ungrounded.length === 1 ? 'figure' : 'figures'}:</strong>{' '}
+                    {turn.ungrounded.join(', ')} {turn.ungrounded.length === 1 ? 'was' : 'were'} not
+                    returned by any tool. Check {turn.ungrounded.length === 1 ? 'it' : 'them'} against
+                    your data before relying on {turn.ungrounded.length === 1 ? 'it' : 'them'}.
+                  </p>
+                </div>
               )}
               {turn.refusal && <p className="refusal">{turn.refusal}</p>}
-              {turn.answer && !turn.streaming && turn.routedTo && SPECIALISTS.has(turn.routedTo) && (
+              {turn.answer &&
+                !turn.streaming &&
+                !turn.stopped &&
+                turn.routedTo &&
+                SPECIALISTS.has(turn.routedTo) && (
                 <DetailControl
                   current={turn.detail ?? 'normal'}
                   disabled={busy}
                   onPick={(detail) => void rerun(turn, detail)}
                 />
+              )}
+              {turn.stopped && (
+                <div className="stopped" role="status">
+                  <p>
+                    Stopped.{' '}
+                    {turn.answer
+                      ? 'What is shown is incomplete, its figures were not checked against the tools, and it was not saved.'
+                      : 'No answer was produced or saved.'}
+                  </p>
+                  {turn.id && turn.routedTo && SPECIALISTS.has(turn.routedTo) && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void rerun(turn, turn.detail ?? 'normal')}
+                    >
+                      Ask again
+                    </button>
+                  )}
+                </div>
               )}
               {turn.streaming && !turn.answer && !turn.refusal && <p className="muted">…</p>}
               {turn.unanswered && <p className="muted small">No answer was stored for this question.</p>}
@@ -348,16 +488,31 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
 
         <form className="composer" onSubmit={send}>
           <input
+            ref={inputRef}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              recallAt.current = -1
+              setDraft(e.target.value)
+            }}
+            onKeyDown={recall}
             placeholder="How has my net worth moved this year?"
             aria-label="Ask a question"
             disabled={busy}
           />
-          <button type="submit" disabled={busy || !draft.trim()}>
-            {busy ? '…' : 'Ask'}
-          </button>
+          {busy ? (
+            <button key="stop" type="button" className="stop" onClick={stop} title="Stop (Esc)">
+              Stop
+            </button>
+          ) : (
+            <button key="ask" type="submit" disabled={!draft.trim()}>
+              Ask
+            </button>
+          )}
         </form>
+        <p className="muted small hint">
+          <kbd>Enter</kbd> ask · <kbd>Esc</kbd> stop · <kbd>/</kbd> focus · <kbd>↑</kbd> earlier
+          question
+        </p>
         {turns.length > 0 && (
           <p className="muted small context-note">
             Follow-ups work: whoever answers sees their own last few answers in this thread.
@@ -383,8 +538,19 @@ function applyEvent(event: ChatEvent, update: (change: (turn: Turn) => Turn) => 
       update((t) => ({ ...t, tools: [...t.tools, { name: event.name, args: event.args }] }))
       break
     case 'tool_result':
-      // Deliberately not rendered. The result is already reflected in the
-      // answer, and showing both invites reading the raw figures instead.
+      // Kept with its call but never laid out: showing the raw result beside the
+      // answer invites reading it instead. A clicked figure shows the one line of
+      // it that states that figure (provenance.ts).
+      update((t) => {
+        const tools = [...t.tools]
+        for (let i = tools.length - 1; i >= 0; i--) {
+          if (tools[i].name === event.name && tools[i].result === undefined) {
+            tools[i] = { ...tools[i], result: event.result }
+            break
+          }
+        }
+        return { ...t, tools }
+      })
       break
     case 'ungrounded':
       update((t) => ({ ...t, ungrounded: event.figures }))

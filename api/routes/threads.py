@@ -43,6 +43,10 @@ class ThreadListing(BaseModel):
 class ToolCall(BaseModel):
     name: str
     args: dict[str, object]
+    #: What the tool returned. The UI never lays it beside the answer; it shows
+    #: the one line holding a figure the reader clicked, so a figure can be traced
+    #: to its source after a reload. Absent on turns stored before results were kept.
+    result: str | None = None
 
 
 class StoredMessage(BaseModel):

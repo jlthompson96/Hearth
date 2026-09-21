@@ -767,6 +767,8 @@ export interface components {
             args: {
                 [key: string]: unknown;
             };
+            /** Result */
+            result?: string | null;
         };
         /** ValidationError */
         ValidationError: {

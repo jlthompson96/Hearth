@@ -10,12 +10,14 @@
  * run). Every screen stays mounted and the inactive ones are hidden rather than
  * unmounted, so switching tabs mid-answer does not cut the stream off.
  *
- * Side panels collapse, and whether each is open is one localStorage key read
- * once on mount — not per route (docs/plan.md). It is a convenience: if storage
- * is blocked or empty, every panel starts open and nothing else changes.
+ * Side panels collapse — the navigation on the left, and Chat's thread list —
+ * and whether each is open is one localStorage key read once on mount, not per
+ * route (docs/plan.md). It is a convenience: if storage is blocked or empty,
+ * every panel starts open and nothing else changes.
  *
- * The backend probe from Phase 0 stays, reduced to a dot in the header. It is
- * the first thing you want to know when an answer does not arrive.
+ * The backend probe from Phase 0 stays, reduced to a dot at the foot of the
+ * navigation. It is the first thing you want to know when an answer does not
+ * arrive.
  */
 import { useEffect, useState } from 'react'
 
@@ -24,9 +26,11 @@ import { Imports } from './Imports'
 import { ManualEntry } from './ManualEntry'
 import { ModelLog } from './ModelLog'
 import { Settings } from './Settings'
+import { Sidebar, type NavItem, type Health as SidebarHealth } from './Sidebar'
 // Generated from the API's OpenAPI schema by `npm run gen:types`, and committed
 // so a fresh clone typechecks without a backend running. Never hand-edited.
 import type { components } from './api/schema'
+import { applyTheme, readTheme, type Theme } from './theme'
 
 type Health = components['schemas']['Health']
 
@@ -36,18 +40,29 @@ type Probe =
   | { state: 'down'; detail: string }
 
 const SCREENS = [
-  { hash: '#/', name: 'Chat' },
-  { hash: '#/imports', name: 'Data & imports' },
-  { hash: '#/entry', name: 'Manual entry' },
-  { hash: '#/log', name: 'Model log' },
-  { hash: '#/settings', name: 'Settings' },
-] as const
+  { hash: '#/', name: 'Chat', icon: 'chat' },
+  { hash: '#/imports', name: 'Data & imports', icon: 'data' },
+  { hash: '#/entry', name: 'Manual entry', icon: 'entry' },
+  { hash: '#/log', name: 'Model log', icon: 'log' },
+  { hash: '#/settings', name: 'Settings', icon: 'settings' },
+] as const satisfies readonly NavItem[]
 
 type Screen = (typeof SCREENS)[number]['hash']
 
 const PANELS_KEY = 'hearth.panels'
-type Panels = { threads: boolean }
-const OPEN: Panels = { threads: true }
+type Panels = { nav: boolean; threads: boolean }
+const OPEN: Panels = { nav: true, threads: true }
+
+function healthOf(probe: Probe): SidebarHealth {
+  switch (probe.state) {
+    case 'up':
+      return { tone: 'up', text: 'Backend connected', version: probe.health.version }
+    case 'checking':
+      return { tone: 'down', text: 'Checking backend' }
+    case 'down':
+      return { tone: 'down', text: 'Backend unreachable', detail: probe.detail }
+  }
+}
 
 function readPanels(): Panels {
   try {
@@ -68,6 +83,7 @@ export function App() {
   const [probe, setProbe] = useState<Probe>({ state: 'checking' })
   const [screen, setScreen] = useState<Screen>(current)
   const [panels, setPanels] = useState<Panels>(readPanels)
+  const [theme, setTheme] = useState<Theme>(readTheme)
 
   useEffect(() => {
     try {
@@ -100,46 +116,41 @@ export function App() {
   }, [])
 
   return (
-    <main>
-      <header className="masthead">
-        <div>
-          <h1>Hearth</h1>
-          <p className="subtitle">Local-first. Nothing here leaves the machine.</p>
+    <div className="shell">
+      <Sidebar
+        items={SCREENS}
+        current={screen}
+        open={panels.nav}
+        onToggle={() => setPanels((p) => ({ ...p, nav: !p.nav }))}
+        health={healthOf(probe)}
+        theme={theme}
+        onTheme={(next) => {
+          setTheme(next)
+          applyTheme(next)
+        }}
+      />
+
+      <main>
+        <div className="view" hidden={screen !== '#/'}>
+          <Chat
+            active={screen === '#/'}
+            panelOpen={panels.threads}
+            onTogglePanel={() => setPanels((p) => ({ ...p, threads: !p.threads }))}
+          />
         </div>
-        <p className="probe" title={probe.state === 'down' ? probe.detail : undefined}>
-          <span className={`dot ${probe.state === 'up' ? 'up' : 'down'}`} />
-          {probe.state === 'up' && `v${probe.health.version}`}
-          {probe.state === 'checking' && 'checking'}
-          {probe.state === 'down' && 'backend unreachable'}
-        </p>
-      </header>
-
-      <nav className="tabs" aria-label="Screens">
-        {SCREENS.map((s) => (
-          <a key={s.hash} href={s.hash} aria-current={s.hash === screen ? 'page' : undefined}>
-            {s.name}
-          </a>
-        ))}
-      </nav>
-
-      <div className="view" hidden={screen !== '#/'}>
-        <Chat
-          panelOpen={panels.threads}
-          onTogglePanel={() => setPanels((p) => ({ ...p, threads: !p.threads }))}
-        />
-      </div>
-      <div className="view" hidden={screen !== '#/imports'}>
-        <Imports active={screen === '#/imports'} />
-      </div>
-      <div className="view" hidden={screen !== '#/entry'}>
-        <ManualEntry active={screen === '#/entry'} />
-      </div>
-      <div className="view" hidden={screen !== '#/log'}>
-        <ModelLog active={screen === '#/log'} />
-      </div>
-      <div className="view" hidden={screen !== '#/settings'}>
-        <Settings active={screen === '#/settings'} />
-      </div>
-    </main>
+        <div className="view" hidden={screen !== '#/imports'}>
+          <Imports active={screen === '#/imports'} />
+        </div>
+        <div className="view" hidden={screen !== '#/entry'}>
+          <ManualEntry active={screen === '#/entry'} />
+        </div>
+        <div className="view" hidden={screen !== '#/log'}>
+          <ModelLog active={screen === '#/log'} />
+        </div>
+        <div className="view" hidden={screen !== '#/settings'}>
+          <Settings active={screen === '#/settings'} />
+        </div>
+      </main>
+    </div>
   )
 }

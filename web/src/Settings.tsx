@@ -266,29 +266,33 @@ export function Settings({ active }: { active: boolean }) {
         </p>
       )}
 
-      <h3>Chat model</h3>
-      {data && (
-        <ModelSection
-          models={data.models}
-          onSwitched={(text, ok) => {
-            setStatus({ ok, text })
-            void refresh()
-          }}
-        />
-      )}
+      <section className="group">
+        <h3>Chat model</h3>
+        {data && (
+          <ModelSection
+            models={data.models}
+            onSwitched={(text, ok) => {
+              setStatus({ ok, text })
+              void refresh()
+            }}
+          />
+        )}
+      </section>
 
-      <h3>Preferences</h3>
-      {data?.preferences.map((preference) => (
-        <PreferenceRow
-          key={preference.key}
-          preference={preference}
-          busy={busy}
-          onChange={(value) => void change(preference, value)}
-        />
-      ))}
+      <section className="group">
+        <h3>Preferences</h3>
+        {data?.preferences.map((preference) => (
+          <PreferenceRow
+            key={preference.key}
+            preference={preference}
+            busy={busy}
+            onChange={(value) => void change(preference, value)}
+          />
+        ))}
+      </section>
 
       {data?.configuration.map((section) => (
-        <div key={section.title}>
+        <section className="group" key={section.title}>
           <h3>{section.title}</h3>
           <table className="table config">
             <tbody>
@@ -304,7 +308,7 @@ export function Settings({ active }: { active: boolean }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       ))}
       {data && (
         <p className="muted small legend">

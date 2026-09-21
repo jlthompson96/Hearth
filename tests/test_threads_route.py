@@ -91,11 +91,23 @@ def test_a_thread_reads_back_as_it_was_shown(client: TestClient) -> None:
     assert question["content"] == "How have my squats progressed?"
     assert answer["agent"] == "forge"
     assert answer["confidence"] == "0.870"
-    # The result is stored for follow-ups but not read back: the UI draws the
-    # call, and a raw result beside the answer invites reading it instead.
+    # The result is read back so a clicked figure can be traced to its source
+    # line after a reload. The UI shows that one line on request, never the whole
+    # result beside the answer, which would invite reading it instead.
     assert answer["tool_calls"] == [
-        {"name": "lift_progression", "args": {"exercise": "back squat"}}
+        {
+            "name": "lift_progression",
+            "args": {"exercise": "back squat"},
+            "result": "back squat  +17.500 kg since 2026-01-06",
+        }
     ]
+
+
+def test_a_call_stored_without_a_result_reads_back_as_none() -> None:
+    # Turns from before results were kept have only a name and arguments.
+    old = threads_route.ToolCall.model_validate({"name": "net_worth_trend", "args": {}})
+
+    assert old.result is None
 
 
 def test_a_follow_up_joins_the_same_thread(client: TestClient) -> None:
