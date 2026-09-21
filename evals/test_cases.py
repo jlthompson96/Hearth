@@ -24,7 +24,7 @@ _RESULTS: list[Result] = []
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _model_available() -> str:
+def _model_available() -> tuple[str, str | None]:
     try:
         settings = get_model_settings()
     except ValidationError:
@@ -36,15 +36,18 @@ def _model_available() -> str:
             f"no model server at {settings.lm_studio_base_url}. Eval numbers only "
             "mean anything measured on the host against the real model."
         )
-    return settings.chat_model
+    return settings.chat_model, settings.reasoning_effort
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _record(_model_available: str) -> object:
+def _record(_model_available: tuple[str, str | None]) -> object:
     yield
     if not _RESULTS:
         return
-    path = runner.record(_RESULTS, model=_model_available, dirty=runner.working_tree_dirty())
+    model, effort = _model_available
+    path = runner.record(
+        _RESULTS, model=model, dirty=runner.working_tree_dirty(), reasoning_effort=effort
+    )
     passing = sum(1 for r in _RESULTS if r.ok)
     runs_passed = sum(r.passed for r in _RESULTS)
     runs = sum(r.runs for r in _RESULTS)

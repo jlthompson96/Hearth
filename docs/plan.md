@@ -145,6 +145,18 @@ tell money from training but not *money* from *the money you have recorded*. Sha
 descriptions to say REPORTING already-recorded data, and adding one question to the prompt
 — can this be answered by reading back what they have recorded? — took it to 100%.
 
+**Addendum, 2026-09-21: the router reasons no more.** In daily use "what are my current
+positions" failed with a raw `ValueError`: the router, reasoning first, had produced twenty
+reasoning tokens and an empty reply, which the structured-output parser rejects. A probe
+reproduced it in 3 of 18 calls; the labelled cases never had. With reasoning off the
+router scored 40/40 on the labelled cases with no empty replies, at 0.41s a call against
+1.29s, and routed "what do I own right now" to Tally 5 times in 5 where reasoning on had
+declined it 5 times in 5. So `ConstrainedJSONRouter` now asks for none, retries an
+unreadable reply once, and if the second is unreadable too ends the turn with a sentence
+rather than a traceback. The specialists keep reasoning: switched off, they stopped calling
+tools and answered from nothing — "I have no data for that period" with data present —
+and "low" saved about 0.2s of an 11s turn. Most of a turn's time is the specialist.
+
 LangGraph arrives here rather than earlier, because this is the first thing in Hearth with
 more than one path through it. The hop cap is `_after_route`, evaluated before any
 specialist runs, so an over-budget turn costs no further model calls.

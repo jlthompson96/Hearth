@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+from openai import ContentFilterFinishReasonError, LengthFinishReasonError
 from pydantic import BaseModel, Field
 
 from agents.loop import load_prompt
@@ -110,8 +111,35 @@ def system_prompt() -> str:
     return load_prompt("steward").format(destinations=_destination_lines())
 
 
+class RoutingError(RuntimeError):
+    """The router's reply was unreadable on every attempt. The turn ends with a
+    plain message rather than a traceback, and no specialist runs."""
+
+
+#: Off, measured on the host on 2026-09-21 against nvidia/nemotron-3-nano-4b.
+#: With reasoning on, the router now and then reasoned for twenty tokens and
+#: returned nothing — a crashed turn in the app on "what are my current
+#: positions", and 3 of 18 calls in one probe. With it off: 40/40 on the
+#: labelled cases, no empty replies, 0.41s a call against 1.29s, and "what do I
+#: own right now" routed to Tally 5 times in 5, where reasoning on had declined
+#: it 5 times in 5. The specialists keep reasoning: off, they stopped calling
+#: tools and answered from nothing.
+REASONING_EFFORT = "none"
+
+#: One retry. A reply that is empty or not the schema is nondeterministic, so a
+#: second attempt usually lands; a third would only delay the message that says
+#: it did not.
+ATTEMPTS = 2
+
+#: What an unreadable reply looks like on the way back: the structured-output
+#: parser's ValueError (pydantic's ValidationError is one too), or the model
+#: stopping on length or a content filter. A connection error is not here: it
+#: is not the reply's fault, and the caller should see it as what it is.
+_UNREADABLE = (ValueError, LengthFinishReasonError, ContentFilterFinishReasonError)
+
+
 class ConstrainedJSONRouter:
-    """The default. One constrained-JSON call, no tool calling."""
+    """The default. One constrained-JSON call, no tool calling, retried once."""
 
     name = "constrained-json"
 
@@ -119,12 +147,21 @@ class ConstrainedJSONRouter:
         self._temperature = temperature
 
     def route(self, question: str) -> Routed:
-        model = structured_model(Decision, temperature=self._temperature)
-        decision = model.invoke(
-            [("system", system_prompt()), ("human", question)],
+        model = structured_model(
+            Decision, temperature=self._temperature, reasoning_effort=REASONING_EFFORT
         )
-        return Routed(
-            destination=decision.destination,
-            confidence=decision.confidence,
-            router=self.name,
-        )
+        failure: Exception | None = None
+        for _ in range(ATTEMPTS):
+            try:
+                decision = model.invoke([("system", system_prompt()), ("human", question)])
+            except _UNREADABLE as error:
+                failure = error
+                continue
+            return Routed(
+                destination=decision.destination,
+                confidence=decision.confidence,
+                router=self.name,
+            )
+        raise RoutingError(
+            f"the router's reply was unreadable {ATTEMPTS} times ({type(failure).__name__})"
+        ) from failure

@@ -12,6 +12,7 @@ the same one being graded and asking it to mark its own work would be circular.
 import datetime as dt
 import json
 import subprocess
+import time
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -58,6 +59,9 @@ class Result:
     required: str
     ok: bool
     detail: list[str] = field(default_factory=list)
+    #: Mean wall-clock seconds per run. A pass rate says whether an answer is
+    #: right; this says whether anyone would wait for it.
+    seconds: float = 0.0
 
     @property
     def rate(self) -> float:
@@ -170,15 +174,17 @@ def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
 def run(case: Case, today: dt.date, runs: int) -> Result:
     passed = 0
     detail: list[str] = []
+    started = time.perf_counter()
     for _ in range(runs):
         ok, why = run_once(case, today)
         passed += ok
         if not ok and why not in detail:
             detail.append(why)
+    seconds = round((time.perf_counter() - started) / runs, 2) if runs else 0.0
 
     required = "all runs" if case.all_runs else "majority"
     ok = passed == runs if case.all_runs else passed > runs // 2
-    return Result(case.id, case.kind, runs, passed, required, ok, detail)
+    return Result(case.id, case.kind, runs, passed, required, ok, detail, seconds)
 
 
 # --- recording ----------------------------------------------------------------
@@ -198,13 +204,17 @@ def head_sha() -> str:
         return "nogit"
 
 
-def record(results: list[Result], *, model: str, dirty: bool) -> Path:
+def record(
+    results: list[Result], *, model: str, dirty: bool, reasoning_effort: str | None = None
+) -> Path:
     """Write `results/<sha>.json`.
 
     Committed, so a prompt change produces a diff in a number rather than a
     memory of a number. The model name is recorded with them because a pass rate
     belongs to a model — the same cases against a different one are a different
-    measurement, not a comparable one.
+    measurement, not a comparable one. The same goes for how much it reasons:
+    a run with reasoning off gets its own file rather than overwriting the one
+    with it on.
     """
     RESULTS.mkdir(exist_ok=True)
     sha = head_sha()
@@ -212,6 +222,7 @@ def record(results: list[Result], *, model: str, dirty: bool) -> Path:
         "sha": sha,
         "dirty": dirty,
         "model": model,
+        "reasoning_effort": reasoning_effort,
         "fixture_year": YEAR,
         "recorded_at": dt.datetime.now().isoformat(timespec="seconds"),
         "totals": {
@@ -219,10 +230,12 @@ def record(results: list[Result], *, model: str, dirty: bool) -> Path:
             "passing": sum(1 for r in results if r.ok),
             "runs": sum(r.runs for r in results),
             "runs_passed": sum(r.passed for r in results),
+            "seconds": round(sum(r.seconds * r.runs for r in results), 1),
         },
         "results": [asdict(r) for r in results],
     }
-    path = RESULTS / f"{sha}{'-dirty' if dirty else ''}.json"
+    effort = f"-reasoning-{reasoning_effort}" if reasoning_effort else ""
+    path = RESULTS / f"{sha}{effort}{'-dirty' if dirty else ''}.json"
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return path
 

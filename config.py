@@ -12,6 +12,7 @@ here would be a hardcoded model name by another route (CLAUDE.md, Stack).
 import ipaddress
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator
@@ -94,6 +95,20 @@ class ModelSettings(BaseSettings):
     # No defaults. Set these to the ids LM Studio reports.
     chat_model: str = Field(min_length=1)
     embedding_model: str = Field(min_length=1)
+
+    # How much the model reasons before answering, for every call that does not
+    # set its own. Unset leaves it to the model — which, for the current one,
+    # means a few hundred hidden tokens before every routing decision and every
+    # answer. "none" turns it off. A setting rather than a constant so the evals
+    # can measure both; every recorded result names the value it ran with.
+    reasoning_effort: Literal["none", "low", "medium", "high"] | None = None
+
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def _unset_when_empty(cls, value: object) -> object:
+        # `REASONING_EFFORT=` with nothing after it means unset, not an invalid
+        # value — the line a copied .env.example would carry.
+        return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("lm_studio_base_url")
     @classmethod

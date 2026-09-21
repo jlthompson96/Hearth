@@ -182,3 +182,39 @@ def test_both_specialists_are_reachable(destination: Destination) -> None:
 
     text = "".join(e.text for e in events if isinstance(e, TokenEvent))
     assert text == f"{destination.value} answered"
+
+
+# --- when the router's reply cannot be read ---------------------------------------
+
+
+class _FailingRouter:
+    name = "failing"
+
+    def route(self, question: str) -> Routed:
+        from steward.router import RoutingError
+
+        raise RoutingError("the router's reply was unreadable 2 times (ValueError)")
+
+
+def test_a_router_that_cannot_answer_ends_the_turn_plainly() -> None:
+    """Seen in the app: "what are my current positions" came back as a raw
+    ValueError. A failed routing decision is the system's fault, and the person
+    gets a sentence saying so — and no specialist runs on a guess."""
+    from steward.graph import UNROUTED
+
+    ran: list[str] = []
+
+    def _should_not_run(question: str, *, today: dt.date) -> Iterator[Any]:
+        ran.append(question)
+        yield DoneEvent()
+
+    events = _collect(
+        "what are my current positions",
+        _FailingRouter(),
+        {"tally": _should_not_run, "forge": _should_not_run},
+    )
+
+    said, done = events
+    assert isinstance(said, TokenEvent) and said.text == UNROUTED
+    assert isinstance(done, DoneEvent) and done.reason.startswith("routing failed")
+    assert ran == []

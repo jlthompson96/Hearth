@@ -38,7 +38,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agents import forge, preflight, tally
 from agents.loop import DoneEvent, Event, RefusedEvent, RoutedEvent, TokenEvent
-from steward.router import ConstrainedJSONRouter, Destination, Router
+from steward.router import ConstrainedJSONRouter, Destination, Router, RoutingError
 
 #: Phase 6: an adversarial delegation-loop prompt must terminate within 6 hops.
 #: A hop is one routing decision. The ordinary turn uses exactly one.
@@ -50,6 +50,14 @@ HALTED = (
     "I could not settle on which specialist should answer that, and I stopped "
     "rather than keep passing it around. Try asking about your finances or your "
     "training more directly."
+)
+
+#: Said when the router's reply could not be read, twice. It is the system's
+#: fault, not the question's, and the person is told so plainly.
+UNROUTED = (
+    "I couldn't work out which specialist should answer that — the model's reply "
+    "came back empty twice. Nothing is wrong with the question; asking it again "
+    "usually works."
 )
 
 #: Said when the router chooses `unsupported`. Hearth reads back what you have
@@ -91,7 +99,12 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
     }
 
     def route(state: StewardState) -> StewardState:
-        decision = chosen.route(state["question"])
+        try:
+            decision = chosen.route(state["question"])
+        except RoutingError as failure:
+            _emit(TokenEvent(UNROUTED))
+            _emit(DoneEvent(f"routing failed: {failure}"))
+            return {"destination": None, "hops": state.get("hops", 0) + 1}
         _emit(
             RoutedEvent(
                 destination=decision.destination.value,
@@ -135,6 +148,9 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
         # further model calls.
         if state.get("hops", 0) > MAX_HOPS:
             return "halt"
+        if state.get("destination") is None:
+            # Routing failed and has already said so. Nothing else runs.
+            return "stop"
         if state["destination"] is Destination.unsupported:
             return "decline"
         return "specialist"
@@ -150,7 +166,9 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
 
     graph.add_edge(START, "route")
     graph.add_conditional_edges(
-        "route", _after_route, {"specialist": "specialist", "decline": "decline", "halt": "halt"}
+        "route",
+        _after_route,
+        {"specialist": "specialist", "decline": "decline", "halt": "halt", "stop": END},
     )
     graph.add_conditional_edges("specialist", _after_specialist, {"route": "route", END: END})
     graph.add_edge("decline", END)

@@ -109,3 +109,12 @@ def test_a_refused_database_url_does_not_print_its_password(
 
     assert "db.example.com" in str(caught.value)
     assert "hunter2" not in str(caught.value)
+
+
+def test_an_empty_reasoning_effort_means_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The line a copied .env.example carries must not stop the model layer."""
+    monkeypatch.setenv("CHAT_MODEL", "m")
+    monkeypatch.setenv("EMBEDDING_MODEL", "e")
+    monkeypatch.setenv("REASONING_EFFORT", "")
+
+    assert ModelSettings(_env_file=None).reasoning_effort is None
