@@ -303,10 +303,17 @@ forgives case, underscores and hyphens, and still refuses a different word ("ben
 a 4B model parrots instruction text: offered a list of what an offer may be, it ended an
 answer "another period". A quoted example sentence replaced the list — and was parroted in
 turn. The first run read back through the Model log ended on it word for word, offering
-last year, which the data does not have, so the "yes" that accepted it found nothing. The
-instruction is now a rule with no example in it: offer only what a tool result showed,
-never a period it showed no records for. Six offers in six then named data a tool had
-returned, and each "yes" found records.
+last year, which the data does not have, so the "yes" that accepted it found nothing.
+
+Fixing that was measured, and the fix was reverted. A rule with no example — offer only
+what a tool result showed — made six offers in six lead to records, and cost the cases
+this project exists for: on the next full eval the detailed positions answer dropped its
+cents, and a follow-up's caveat came back as "July 31, 2026" instead of the ISO date the
+tool wrote. Interleaved against the original wording on those three cases, same code: the
+original 9/9, the rule 2/9; swapping only the example for "how that changed month by
+month" 6/9, the original 9/9 again. One sentence at the end of the prompt moves how
+exactly a 4B model copies figures, and nothing predicted which way. So the original
+stays, with its known wart: an offer of last year can end in an honest "no records".
 
 **Found while testing, and deliberately not fixed here: the UI's route around the
 pre-flight check.** The UI never names an agent, so every turn goes through the Steward,

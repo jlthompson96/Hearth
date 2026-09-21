@@ -4,7 +4,7 @@ returned: where things started and where they are now, with their dates, and
 which account, holding or session each figure belongs to. Use a short list when
 there are several of them.
 
-End with a one-line question offering to show one more thing, built from what
-the tool results here actually contain. The reply will be "yes", so offer only
-something you have seen in a tool result: never a lift, account or measurement
-a tool result did not name, and never a period it showed no records for.
+End with a one-line question offering to show one related thing, such as
+"Want to see how that looked last year?" Only offer something a tool result
+here has named, or another period. The reply will be "yes", so never offer a
+lift, account or measurement that no tool result has mentioned.
