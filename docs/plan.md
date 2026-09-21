@@ -325,6 +325,21 @@ safe one as the filter stands — it refuses "should I purge my old credit card 
 purging, and reads "cut 500 calories a day" as a 500-calorie intake. Resolved the same
 day, patterns first — see the answered questions below.
 
+**Addendum, 2026-09-21: the follow-up baseline, and what one run is worth.** Recorded at
+`2bcd3b7`: 57/61 cases, 173/183 runs (`evals/results/2bcd3b7.json`). The follow-up cases
+hold — every reply, change of subject and advice question routes as labelled bar the
+known training-advice miss, "yes" to an offer finds the offered figure, and the caveat
+survives a follow-up. Three full runs today, though, say something about the suite
+itself: the same case, with the same code and prompts, went 0/3, 0/3 and then 3/3
+(finance advice as a follow-up), and two standalone caveat cases that failed 0/3 and 1/3
+in the full run passed 12/12 run on their own straight after — with and without
+`stream_usage`, which was the one change in the path. The failures share a shape: an ISO
+date or a figure paraphrased ("August 31", "$38,250"). Something in a long run — most
+likely LM Studio reusing cached prompt prefixes between calls — moves a temperature-0
+model across a near tie. Until that is pinned down, a one-case delta between full runs is
+not evidence; an interleaved A/B on the cases in question is, and is how the offer wording
+above was settled.
+
 ## Phase 9 — Errand and egress (2)
 
 SearXNG with JSON format enabled and limiter relaxed. `SearxSearchWrapper`.
