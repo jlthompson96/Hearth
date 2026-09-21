@@ -173,7 +173,7 @@ measurement found, is in [docs/plan.md](docs/plan.md).
 | 4 | Model connection | Done | Constrained JSON schema-valid 10/10 → **30/30** |
 | 5 | Tally, end to end | Done | Net worth exact to the cent with the coverage gap stated → **3/3** |
 | 6 | Steward and routing | Done | Routing ≥ 90% → **60/60**; a delegation loop stops at 6 hops |
-| 7 | Eval harness | Done | A prompt edit moves a number → caveat cases 3/3 → 0/3 → 3/3; baseline **44/44, 132/132** |
+| 7 | Eval harness | Done | A prompt edit moves a number → caveat cases 3/3 → 0/3 → 3/3; baseline **47/47, 141/141** |
 | 8 | Thread history | Done | Last week's thread found by a word you remember → found by "squat" and by "squatting" |
 | 9 | Errand and egress (web search) | **Blocked** — SearXNG needs Docker or a native install | A prompt engineered to leak a balance into a search raises `EgressViolation` |
 | 10 | RAG over documents | **Blocked** — pgvector needs an MSVC build | Retrieval traceable per answer; context stays within budget |
