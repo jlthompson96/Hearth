@@ -36,6 +36,7 @@ from tools.finance import (
     Allocation,
     BalanceHistory,
     NetWorthTrend,
+    Position,
     UnknownAccountError,
     get_allocation,
     get_balance_history,
@@ -103,9 +104,22 @@ def _render_trend(result: NetWorthTrend, available: tuple[dt.date, dt.date] | No
         if available:
             answer += f" Recorded data runs from {available[0]:{ISO}} to {available[1]:{ISO}}."
         return answer
+    # A partial total is marked on its own line, not only in the caveat below.
+    # A walk through the months reads each line on its own, and an unmarked
+    # July missing one account reads as a July that fell — which is how a
+    # detailed answer came to describe "a sharp drop" that never happened.
+    incomplete = set(result.coverage.incomplete_dates)
     lines = [
         f"net worth {result.start:{ISO}} to {result.end:{ISO}}",
-        *(f"  {p.as_of:{ISO}}  {_money(p.balance)}" for p in result.points),
+        *(
+            f"  {p.as_of:{ISO}}  {_money(p.balance)}"
+            + (
+                "  incomplete: an account has no figure for this date"
+                if p.as_of in incomplete
+                else ""
+            )
+            for p in result.points
+        ),
         f"change over the period: {_signed(result.change)}",
     ]
     # The caveat is a finished sentence from Phase 3 and the agent is required
@@ -135,7 +149,36 @@ def _render_allocation(result: Allocation) -> str:
         )
     lines += [f"  {s.symbol}  {_money(s.market_value)}  {s.percentage}%" for s in result.slices]
     lines.append(f"total: {_money(result.total)}")
+    if result.accounts:
+        lines.append("by account:")
+        for account in result.accounts:
+            lines.append(f"  {account.label}  {_money(account.total)}")
+            lines += [_position_line(p) for p in account.positions]
     return "\n".join(lines)
+
+
+def _quantity(value: Decimal) -> str:
+    """120, not 120.00000000; 100.5 as 100.5. Trailing zeros are storage, not
+    information."""
+    return f"{value.normalize():f}"
+
+
+def _price(value: Decimal) -> str:
+    """To the cent, and further only when the price carries more: $72.00,
+    $72.1234. Trimmed, never rounded."""
+    sign = "-" if value < 0 else ""
+    whole, _, fraction = f"{abs(value):,.6f}".partition(".")
+    return f"{sign}${whole}.{fraction.rstrip('0').ljust(2, '0')}"
+
+
+def _position_line(position: Position) -> str:
+    if position.quantity is None:
+        return f"    {position.symbol}  {_money(position.market_value)}"
+    price = f" at {_price(position.price)}" if position.price is not None else ""
+    return (
+        f"    {position.symbol}  quantity {_quantity(position.quantity)}{price}  "
+        f"{_money(position.market_value)}"
+    )
 
 
 @tool
@@ -179,7 +222,8 @@ def balance_history(account_label: str, start: str, end: str) -> str:
 
 @tool
 def allocation(as_of: str) -> str:
-    """Investment holdings broken down by symbol, with percentages, on one date.
+    """Investment holdings on one date: by symbol with percentages, then each
+    account's positions with quantity, price and value.
 
     Use for: allocation, holdings, positions, what am I invested in. Answers with
     the most recent holdings on or before the date given, and says so when that

@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 from agents import forge, tally
 from agents.grounding import ungrounded
 from agents.loop import (
+    Detail,
     DoneEvent,
     Event,
     RefusedEvent,
@@ -77,17 +78,22 @@ class ChatRequest(BaseModel):
     #: The thread to continue. None starts a new one; its id comes back in the
     #: first event, `thread`.
     thread_id: uuid.UUID | None = None
+    #: How much to say: the "Less / Normal / More" control under an answer
+    #: re-asks the same question with this changed, naming the same specialist.
+    detail: Detail = "normal"
 
 
 def _sse(event: str, payload: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
-def _events(agent: Agent | None, message: str, today: dt.date) -> Iterator[Event]:
+def _events(
+    agent: Agent | None, message: str, today: dt.date, detail: Detail = "normal"
+) -> Iterator[Event]:
     if agent is None:
-        return steward.answer(message, today=today)
+        return steward.answer(message, today=today, detail=detail)
     answer = tally.answer if agent is Agent.tally else forge.answer
-    return answer(message, today=today)
+    return answer(message, today=today, detail=detail)
 
 
 def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
@@ -112,7 +118,7 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
     refusal: str | None = None
     results: list[str] = []
     try:
-        for item in _events(request.agent, request.message, today):
+        for item in _events(request.agent, request.message, today, request.detail):
             match item:
                 case TokenEvent(text=text, provisional=provisional):
                     if not provisional:
@@ -168,6 +174,7 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
                     refused=refusal is not None,
                     confidence=confidence,
                     ungrounded=flags or None,
+                    detail=request.detail,
                 )
             untitled = store.needs_title(conn, thread_id)
         if untitled:

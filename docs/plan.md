@@ -242,6 +242,20 @@ The same switch is untried on the router and the specialists, each of which curr
 spends a few hundred reasoning tokens per call. Whether turning it off there costs accuracy
 is a question for `make eval`, not a guess.
 
+**Addendum, 2026-09-22: answers at three lengths.** The owner found the specialists too
+terse — "a sentence or two, then the figures" was in both prompts — and asked for a way to
+rerun an answer with more or less. Each answer now has Less · Normal · More; a rerun names
+the same specialist and a detail level, whose instruction is its own prompt file. The
+allocation tool gained positions per account with quantity and price, because a model can
+only say what it is handed. Measured on the fixture: brief 8–33 words, normal 42–108,
+detailed up to every figure the tool returned, with no ungrounded figure at any level.
+
+Longer answers found a bug short ones never reached. Walking the months, a detailed answer
+described July — the month one account is missing — as "a sharp drop". The caveat was
+there, three lines below; the July line itself looked like any other. The tool now marks a
+partial total on its own line, and five answers in five then called July incomplete and
+none called it a drop. An eval case holds it.
+
 **A thread is a record, not context.** The model still answers each question on its own;
 earlier turns are not sent to it. Sending them is a decision about the 8,192-token window
 and about how the Steward routes a follow-up, and it is not this phase's. The chat says so

@@ -108,11 +108,31 @@ class AllocationSlice:
 
 
 @dataclass(frozen=True)
+class Position:
+    symbol: str
+    #: Absent on a cash line, which reports a value and no share count.
+    quantity: Decimal | None
+    price: Decimal | None
+    market_value: Decimal
+
+
+@dataclass(frozen=True)
+class AccountPositions:
+    label: str
+    #: Summed here, so the model never adds a column of figures itself.
+    total: Decimal
+    positions: tuple[Position, ...]
+
+
+@dataclass(frozen=True)
 class Allocation:
     as_of_requested: dt.date
     as_of_used: dt.date | None
     total: Decimal
     slices: tuple[AllocationSlice, ...]
+    #: The same holdings, per account, with quantity and price — what "what are
+    #: my positions" is asking for, where the slices answer "what am I in".
+    accounts: tuple[AccountPositions, ...] = ()
 
 
 def _money(value: Decimal) -> Decimal:
@@ -240,4 +260,26 @@ def get_allocation(conn: sa.Connection, as_of: dt.date) -> Allocation:
         )
         for r in rows
     )
-    return Allocation(as_of_requested=as_of, as_of_used=used, total=total, slices=slices)
+
+    held = conn.execute(
+        sa.text(
+            "select a.label, h.symbol, h.quantity, h.price, h.market_value "
+            "from holding_snapshot h join account a on a.id = h.account_id "
+            "where h.as_of = :used order by a.label, h.market_value desc, h.symbol"
+        ),
+        {"used": used},
+    ).all()
+    by_account: dict[str, list[Position]] = {}
+    for label, symbol, quantity, price, value in held:
+        by_account.setdefault(label, []).append(Position(symbol, quantity, price, value))
+    accounts = tuple(
+        AccountPositions(
+            label=label,
+            total=_money(sum((p.market_value for p in positions), Decimal("0"))),
+            positions=tuple(positions),
+        )
+        for label, positions in by_account.items()
+    )
+    return Allocation(
+        as_of_requested=as_of, as_of_used=used, total=total, slices=slices, accounts=accounts
+    )

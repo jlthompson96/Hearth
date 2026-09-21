@@ -682,3 +682,41 @@ code {
   font-size: 0.8125rem;
   line-height: 1.5;
 }
+
+/* Less · Normal · More under an answer. Quiet until wanted: it re-asks, so it
+   should read as an option, not as part of the answer. */
+.detail {
+  display: inline-flex;
+  margin-top: 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+.detail button {
+  padding: 0.1875rem 0.625rem;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.detail button + button { border-left: 1px solid var(--line); }
+
+.detail button:hover:not(:disabled) { color: var(--fg); background: var(--raised); }
+
+.detail button[aria-pressed='true'] {
+  color: var(--fg);
+  background: var(--raised);
+  cursor: default;
+}
+
+.detail button:disabled:not([aria-pressed='true']) { opacity: 0.5; cursor: default; }
+
+.level {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+}

@@ -22,7 +22,7 @@ import yaml
 
 from agents import forge, preflight, tally
 from agents.grounding import ungrounded
-from agents.loop import Event, RefusedEvent, TokenEvent, ToolEvent, ToolResultEvent
+from agents.loop import Detail, Event, RefusedEvent, TokenEvent, ToolEvent, ToolResultEvent
 from scripts.seed import YEAR
 from steward import graph as steward
 
@@ -46,6 +46,10 @@ class Case:
     must_contain_any: list[str] = field(default_factory=list)
     must_not_contain: list[str] = field(default_factory=list)
     all_runs: bool = False
+    #: How much the specialist is asked to say. Cases default to "normal", the
+    #: level every question starts at; a few pin another, because a longer
+    #: answer walks through more figures and so has more ways to get one wrong.
+    detail: Detail = "normal"
     #: Present in the file for a reader; carried so it reaches the results.
     note: str | None = None
 
@@ -103,8 +107,8 @@ def _answer(case: Case, today: dt.date) -> Iterator[Event]:
     failure from looking identical from outside.
     """
     if case.agent is None:
-        return steward.answer(case.question, today=today)
-    return SPECIALISTS[case.agent](case.question, today=today)
+        return steward.answer(case.question, today=today, detail=case.detail)
+    return SPECIALISTS[case.agent](case.question, today=today, detail=case.detail)
 
 
 def _text_and_tools(case: Case, today: dt.date) -> tuple[str, list[str], str | None, list[str]]:

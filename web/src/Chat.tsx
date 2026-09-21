@@ -21,10 +21,20 @@ import { useEffect, useRef, useState } from 'react'
 import { streamChat, type ChatEvent } from './api/chat'
 import { reason } from './api/http'
 import { threads, type StoredMessage } from './api/threads'
-import { withNegativesInRed } from './money'
+import { renderAnswer } from './answer'
 import { ThreadPanel } from './Threads'
 
 type ToolCall = { name: string; args: Record<string, unknown> }
+
+/** How much a specialist says. "Less · Normal · More" under an answer re-asks
+ *  the same question at another level, of the same specialist. */
+type Detail = 'brief' | 'normal' | 'detailed'
+const LEVELS: { detail: Detail; label: string }[] = [
+  { detail: 'brief', label: 'Less' },
+  { detail: 'normal', label: 'Normal' },
+  { detail: 'detailed', label: 'More' },
+]
+const SPECIALISTS = new Set(['tally', 'forge'])
 
 type Turn = {
   question: string
@@ -38,7 +48,40 @@ type Turn = {
   error?: string
   /** Read back from storage with no answer: the turn failed when it ran. */
   unanswered?: boolean
+  /** The level the answer was asked for; absent on answers from before the
+   *  control existed, which read as normal. */
+  detail?: Detail
   streaming: boolean
+}
+
+/** The control under an answer. The level it was given at is marked; the other
+ *  two re-ask. Only a specialist's answer has one: a refusal or a decline is
+ *  not a matter of length. */
+function DetailControl({
+  current,
+  disabled,
+  onPick,
+}: {
+  current: Detail
+  disabled: boolean
+  onPick: (detail: Detail) => void
+}) {
+  return (
+    <div className="detail" role="group" aria-label="Ask again with more or less detail">
+      {LEVELS.map(({ detail, label }) => (
+        <button
+          key={detail}
+          type="button"
+          aria-pressed={detail === current}
+          disabled={disabled || detail === current}
+          onClick={() => onPick(detail)}
+          title={detail === current ? 'This answer' : `Ask again: ${label.toLowerCase()} detail`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function ToolLine({ call }: { call: ToolCall }) {
@@ -55,12 +98,23 @@ function ToolLine({ call }: { call: ToolCall }) {
 
 /** Who answered, and how sure the router was. A low number is worth seeing:
  *  it is the difference between a decision and a coin flip. */
-function Attribution({ to, confidence }: { to: string; confidence?: number }) {
+function Attribution({
+  to,
+  confidence,
+  detail,
+}: {
+  to: string
+  confidence?: number
+  detail?: Detail
+}) {
   const unsure = confidence !== undefined && confidence < 0.6
   return (
     <p className="attribution">
       <span className={`who ${to}`}>{to}</span>
       {unsure && <span className="unsure">low confidence</span>}
+      {detail && detail !== 'normal' && (
+        <span className="level">{detail === 'brief' ? 'less detail' : 'more detail'}</span>
+      )}
     </p>
   )
 }
@@ -90,6 +144,7 @@ function toTurns(messages: StoredMessage[]): Turn[] {
     if (message.refused) turn.refusal = message.content
     else turn.answer = message.content
     turn.ungrounded = message.ungrounded ?? undefined
+    turn.detail = (message.detail as Detail | null) ?? undefined
   }
   return turns
 }
@@ -148,18 +203,31 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
     event.preventDefault()
     const question = draft.trim()
     if (!question || busy) return
-
     setDraft('')
+    // No agent named: the Steward decides.
+    await ask(question, 'normal')
+  }
+
+  /** The same question again at another level, of the specialist that answered
+   *  it — named, so it cannot be routed somewhere else the second time. */
+  async function rerun(turn: Turn, detail: Detail) {
+    if (busy || !turn.routedTo || !SPECIALISTS.has(turn.routedTo)) return
+    await ask(turn.question, detail, turn.routedTo as 'tally' | 'forge')
+  }
+
+  async function ask(question: string, detail: Detail, agent?: 'tally' | 'forge') {
     setBusy(true)
     const index = turns.length
-    setTurns((previous) => [...previous, { question, tools: [], answer: '', streaming: true }])
+    setTurns((previous) => [
+      ...previous,
+      { question, tools: [], answer: '', streaming: true, detail, routedTo: agent },
+    ])
 
     const update = (change: (turn: Turn) => Turn) =>
       setTurns((previous) => previous.map((t, i) => (i === index ? change(t) : t)))
 
     try {
-      // No agent named: the Steward decides.
-      for await (const event of streamChat({ message: question, thread_id: threadId })) {
+      for await (const event of streamChat({ message: question, thread_id: threadId, agent, detail })) {
         if (event.type === 'thread') {
           setThreadId(event.id)
           if (event.created) relist()
@@ -203,11 +271,17 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
           {turns.map((turn, i) => (
             <article key={i} className="turn">
               <p className="question">{turn.question}</p>
-              {turn.routedTo && <Attribution to={turn.routedTo} confidence={turn.confidence} />}
+              {turn.routedTo && (
+                <Attribution
+                  to={turn.routedTo}
+                  confidence={turn.confidence}
+                  detail={turn.detail}
+                />
+              )}
               {turn.tools.map((call, j) => (
                 <ToolLine key={j} call={call} />
               ))}
-              {turn.answer && <p className="answer">{withNegativesInRed(turn.answer)}</p>}
+              {turn.answer && <p className="answer">{renderAnswer(turn.answer)}</p>}
               {turn.ungrounded && turn.ungrounded.length > 0 && (
                 <p className="ungrounded">
                   Not found in any tool result: {turn.ungrounded.join(', ')}. Treat{' '}
@@ -216,6 +290,13 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
                 </p>
               )}
               {turn.refusal && <p className="refusal">{turn.refusal}</p>}
+              {turn.answer && !turn.streaming && turn.routedTo && SPECIALISTS.has(turn.routedTo) && (
+                <DetailControl
+                  current={turn.detail ?? 'normal'}
+                  disabled={busy}
+                  onPick={(detail) => void rerun(turn, detail)}
+                />
+              )}
               {turn.streaming && !turn.answer && !turn.refusal && <p className="muted">…</p>}
               {turn.unanswered && <p className="muted small">No answer was stored for this question.</p>}
               {turn.error && <p className="error">{turn.error}</p>}

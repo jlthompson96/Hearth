@@ -23,7 +23,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 
 from langchain_core.messages import AIMessageChunk, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -98,6 +98,19 @@ def load_prompt(name: str) -> str:
     literals, because Phase 7 measures the delta when one changes and a prompt
     you cannot diff is a prompt you cannot measure."""
     return (PROMPTS / f"{name}.md").read_text(encoding="utf-8")
+
+
+#: How much a specialist says. One prompt fragment each, in prompts/detail/,
+#: slotted into the specialist's own prompt: the voice is the specialist's, the
+#: length is the person's choice — and every level keeps every rule.
+Detail = Literal["brief", "normal", "detailed"]
+DETAILS: tuple[Detail, ...] = get_args(Detail)
+
+
+def detail_prompt(detail: Detail) -> str:
+    if detail not in DETAILS:
+        raise ValueError(f"unknown detail level {detail!r}; one of {DETAILS}")
+    return load_prompt(f"detail/{detail}").strip()
 
 
 def run(*, system: str, question: str, tools: list[BaseTool]) -> Iterator[Event]:

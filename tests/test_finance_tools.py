@@ -144,6 +144,20 @@ def test_allocation_percentages_are_computed_and_total_one_hundred(
     assert sum(s.percentage for s in allocation.slices) == Decimal("100.0")
 
 
+def test_allocation_breaks_positions_down_by_account(seeded: sa.Connection) -> None:
+    """ "What are my positions" deserves the positions: which account holds
+    what, how many, at what price. Each account's total is summed here, in
+    Python, so the model never has to add them (rule 1)."""
+    allocation = get_allocation(seeded, DEC)
+
+    [account] = allocation.accounts
+    assert (account.label, account.total) == ("Brokerage", Decimal("49200.00"))
+    assert [(p.symbol, p.quantity, p.price, p.market_value) for p in account.positions] == [
+        ("VTI", Decimal("120.00000000"), Decimal("230.000000"), Decimal("27600.00")),
+        ("BND", Decimal("300.00000000"), Decimal("72.000000"), Decimal("21600.00")),
+    ]
+
+
 def test_allocation_reports_the_date_it_actually_used(seeded: sa.Connection) -> None:
     """Asking for mid-June answers with May's snapshot, and says so. Silently
     answering with a different date is how a number stops being trustworthy

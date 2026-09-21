@@ -350,6 +350,9 @@ class Message(Base):
     #: Figures the answer states that no tool returned (agents.grounding) —
     #: rule 1, checked on every real answer rather than only in the evals.
     ungrounded: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    #: How much the answer was asked to say — brief, normal or detailed — so a
+    #: rerun at another level is labelled as one after a reload.
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[timestamp]
 
     thread: Mapped[Thread] = relationship(back_populates="messages")

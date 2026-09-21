@@ -16,15 +16,15 @@ import datetime as dt
 from collections.abc import Iterator
 
 from agents import preflight
-from agents.loop import Event, RefusedEvent, load_prompt, run
+from agents.loop import Detail, Event, RefusedEvent, detail_prompt, load_prompt, run
 from tools.bindings import FORGE_TOOLS
 
 
-def system_prompt(today: dt.date) -> str:
-    return load_prompt("forge").format(today=today.isoformat())
+def system_prompt(today: dt.date, detail: Detail = "normal") -> str:
+    return load_prompt("forge").format(today=today.isoformat(), detail=detail_prompt(detail))
 
 
-def answer(question: str, *, today: dt.date) -> Iterator[Event]:
+def answer(question: str, *, today: dt.date, detail: Detail = "normal") -> Iterator[Event]:
     """Answer `question`, yielding events as they happen.
 
     Refuses before inference when the pre-flight check fires. `today` is
@@ -36,4 +36,4 @@ def answer(question: str, *, today: dt.date) -> Iterator[Event]:
         yield RefusedEvent(refusal.signal, refusal.message)
         return
 
-    yield from run(system=system_prompt(today), question=question, tools=FORGE_TOOLS)
+    yield from run(system=system_prompt(today, detail), question=question, tools=FORGE_TOOLS)

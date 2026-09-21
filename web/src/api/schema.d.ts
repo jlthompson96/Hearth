@@ -270,6 +270,12 @@ export interface components {
             today?: string | null;
             /** Thread Id */
             thread_id?: string | null;
+            /**
+             * Detail
+             * @default normal
+             * @enum {string}
+             */
+            detail: "brief" | "normal" | "detailed";
         };
         /** Entry */
         Entry: {
@@ -422,6 +428,8 @@ export interface components {
             confidence: string | null;
             /** Ungrounded */
             ungrounded: string[] | null;
+            /** Detail */
+            detail: string | null;
             /**
              * Created At
              * Format: date-time

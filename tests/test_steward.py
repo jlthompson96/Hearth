@@ -45,14 +45,14 @@ class FixedRouter:
 
 
 def _answers(text: str) -> Callable[..., Iterator[Any]]:
-    def _answer(question: str, *, today: dt.date) -> Iterator[Any]:
+    def _answer(question: str, *, today: dt.date, detail: str = "normal") -> Iterator[Any]:
         yield TokenEvent(text)
         yield DoneEvent()
 
     return _answer
 
 
-def _always_hands_back(question: str, *, today: dt.date) -> Iterator[Any]:
+def _always_hands_back(question: str, *, today: dt.date, detail: str = "normal") -> Iterator[Any]:
     """The adversarial specialist: never answers, always asks to be re-routed."""
     yield HandoffEvent()
 
@@ -81,7 +81,7 @@ def test_the_other_specialist_is_not_consulted() -> None:
     seen: list[str] = []
 
     def _record(name: str) -> Callable[..., Iterator[Any]]:
-        def _answer(question: str, *, today: dt.date) -> Iterator[Any]:
+        def _answer(question: str, *, today: dt.date, detail: str = "normal") -> Iterator[Any]:
             seen.append(name)
             yield DoneEvent()
 
@@ -100,7 +100,7 @@ def test_an_unsupported_question_never_reaches_a_specialist() -> None:
     data will answer anyway, from nothing."""
     called: list[str] = []
 
-    def _should_not_run(question: str, *, today: dt.date) -> Iterator[Any]:
+    def _should_not_run(question: str, *, today: dt.date, detail: str = "normal") -> Iterator[Any]:
         called.append("ran")
         yield DoneEvent()
 
@@ -143,7 +143,7 @@ def test_the_cap_costs_nothing_extra_once_it_binds() -> None:
     for one more model call on its way out."""
     calls: list[int] = []
 
-    def _counts(question: str, *, today: dt.date) -> Iterator[Any]:
+    def _counts(question: str, *, today: dt.date, detail: str = "normal") -> Iterator[Any]:
         calls.append(1)
         yield HandoffEvent()
 
@@ -158,7 +158,7 @@ def test_tool_events_survive_the_graph() -> None:
     """The graph streams what the specialist produced, unchanged. Attribution
     and the tool lines in the UI both depend on this."""
 
-    def _with_tool(question: str, *, today: dt.date) -> Iterator[Any]:
+    def _with_tool(question: str, *, today: dt.date, detail: str = "normal") -> Iterator[Any]:
         yield ToolEvent("net_worth_trend", {"start": "2026-01-01", "end": "2026-09-20"})
         yield TokenEvent("done")
         yield DoneEvent()
@@ -204,7 +204,7 @@ def test_a_router_that_cannot_answer_ends_the_turn_plainly() -> None:
 
     ran: list[str] = []
 
-    def _should_not_run(question: str, *, today: dt.date) -> Iterator[Any]:
+    def _should_not_run(question: str, *, today: dt.date, detail: str = "normal") -> Iterator[Any]:
         ran.append(question)
         yield DoneEvent()
 

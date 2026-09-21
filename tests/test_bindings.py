@@ -51,6 +51,18 @@ def test_net_worth_trend_states_the_coverage_caveat(_bound: None) -> None:
     assert "complete only from" in result
 
 
+def test_a_partial_total_is_marked_on_its_own_line(_bound: None) -> None:
+    """Retirement is missing July. A detailed answer walking the months read the
+    unmarked July total as a fall and said so. The line itself now says it is
+    partial; the other months stay unmarked."""
+    result = net_worth_trend.invoke({"start": FULL_YEAR[0], "end": FULL_YEAR[1]})
+    lines = {line.split()[0]: line for line in result.splitlines() if line.startswith("  ")}
+
+    assert "incomplete" in lines[f"{YEAR}-07-31"]
+    assert "incomplete" not in lines[f"{YEAR}-06-30"]
+    assert "incomplete" not in lines[f"{YEAR}-08-31"]
+
+
 def test_net_worth_trend_reports_complete_coverage_when_it_is_complete(_bound: None) -> None:
     """August onward has every account reporting. Saying nothing about coverage
     is not the same as saying it is complete, and the agent needs the latter."""
@@ -154,6 +166,29 @@ def test_allocation_percentages_come_from_the_query(_bound: None) -> None:
     assert "VTI" in result and "BND" in result
     assert "%" in result
     assert "total:" in result
+
+
+def test_allocation_hands_the_model_each_account_s_positions(_bound: None) -> None:
+    """Quantities without trailing zeros, prices to the cent unless they carry
+    more, values as US currency — the form the answer should repeat."""
+    result = allocation.invoke({"as_of": f"{YEAR}-12-31"})
+
+    assert "by account:" in result
+    assert "Brokerage  $49,200.00" in result
+    assert "VTI  quantity 120 at $230.00  $27,600.00" in result
+    assert "BND  quantity 300 at $72.00  $21,600.00" in result
+
+
+def test_a_position_with_no_quantity_is_shown_by_value_alone() -> None:
+    """A money-market line reports a value and nothing else; the line must not
+    invent "quantity None"."""
+    from tools.bindings import _position_line
+    from tools.finance import Position
+
+    line = _position_line(Position("CASHX**", None, None, Decimal("5025.00")))
+
+    assert line.strip() == "CASHX**  $5,025.00"
+    assert "None" not in line
 
 
 def test_tally_is_not_given_forge_s_tools() -> None:

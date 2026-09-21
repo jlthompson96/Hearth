@@ -54,6 +54,8 @@ class StoredMessage(BaseModel):
     confidence: Decimal | None
     #: Figures the answer stated that no tool returned. Shown as a warning.
     ungrounded: list[str] | None
+    #: brief, normal or detailed; None for answers from before the control.
+    detail: str | None
     created_at: dt.datetime
 
 
@@ -115,6 +117,7 @@ def get_thread(thread_id: uuid.UUID) -> ThreadDetail:
                 refused=m.refused,
                 confidence=m.confidence,
                 ungrounded=m.ungrounded,
+                detail=m.detail,
                 created_at=m.created_at,
             )
             for m in detail.messages

@@ -60,7 +60,9 @@ def client() -> TestClient:
 
 
 def _script(*events: Event) -> object:
-    def _fake(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+    def _fake(
+        agent: object, question: str, today: dt.date, detail: str = "normal"
+    ) -> Iterator[Event]:
         _fake.seen = (question, today)  # type: ignore[attr-defined]
         yield from events
 
@@ -166,7 +168,9 @@ def test_an_exception_mid_stream_becomes_an_error_event(
     available. A truncated stream is indistinguishable from a finished one, and
     silently looking finished is the worst of the options."""
 
-    def _explodes(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+    def _explodes(
+        agent: object, question: str, today: dt.date, detail: str = "normal"
+    ) -> Iterator[Event]:
         yield TokenEvent("starting")
         raise RuntimeError("LM Studio went away")
 
@@ -247,7 +251,9 @@ def test_the_agent_defaults_to_routing_and_is_still_selectable(
     default. It is now None, meaning "ask the Steward"."""
     seen: list[object] = []
 
-    def _capture(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+    def _capture(
+        agent: object, question: str, today: dt.date, detail: str = "normal"
+    ) -> Iterator[Event]:
         seen.append(agent)
         yield DoneEvent()
 
@@ -270,7 +276,9 @@ def test_no_agent_routes_through_the_steward(
     """The UI sends no agent. Phase 6's whole point is that it does not have to."""
     seen: list[object] = []
 
-    def _capture(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+    def _capture(
+        agent: object, question: str, today: dt.date, detail: str = "normal"
+    ) -> Iterator[Event]:
         seen.append(agent)
         yield DoneEvent()
 
@@ -288,7 +296,9 @@ def test_a_named_agent_still_bypasses_routing(
     same from outside."""
     seen: list[object] = []
 
-    def _capture(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+    def _capture(
+        agent: object, question: str, today: dt.date, detail: str = "normal"
+    ) -> Iterator[Event]:
         seen.append(agent)
         yield DoneEvent()
 
@@ -380,7 +390,9 @@ def test_a_refused_turn_is_titled_without_the_model(
 def test_an_answer_that_failed_is_not_stored_but_the_question_is(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore
 ) -> None:
-    def _explodes(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+    def _explodes(
+        agent: object, question: str, today: dt.date, detail: str = "normal"
+    ) -> Iterator[Event]:
         yield TokenEvent("half an ans")
         raise RuntimeError("LM Studio went away")
 

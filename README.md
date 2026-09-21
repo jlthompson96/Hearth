@@ -324,6 +324,13 @@ The chat shows which tool ran and with which arguments. On a model this size the
 question about any figure is where it came from, and one line of tool call answers it
 without a tracing UI.
 
+Every specialist's answer has a **Less · Normal · More** control under it. Choosing another
+level asks the same question again, of the same specialist, at that level: brief is the
+answer and its headline figure, normal walks through the main figures with their dates,
+more lists everything the tool returned. The level changes how much is said and nothing
+else — each level's instruction is a file in `prompts/detail/`, and every rule lives in
+the specialist's own prompt, so it holds at all three (`tests/test_detail.py`).
+
 Two behaviours are load-bearing and are tested rather than hoped for:
 
 - **The caveat is repeated, not summarised.** When coverage is incomplete the tool emits a

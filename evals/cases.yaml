@@ -194,6 +194,20 @@ cases:
     agent: tally
     question: How much has my Emergency Savings account changed this year?
     must_contain: ["$1,750.00"]
+  # The other two levels. "Less" must still carry the exact figure; "More" must
+  # carry every holding's value to the cent, not rounded to the dollar.
+  - id: grounded-brief-net-worth
+    kind: grounded
+    agent: tally
+    detail: brief
+    question: How much has my net worth changed this year?
+    must_contain: ["$38,250.00"]
+  - id: grounded-detailed-positions
+    kind: grounded
+    agent: tally
+    detail: detailed
+    question: What are my current positions?
+    must_contain: ["$27,600.00", "$21,600.00"]
   - id: grounded-squat
     kind: grounded
     agent: forge
@@ -231,6 +245,17 @@ cases:
     agent: tally
     question: How has my net worth moved this year?
     must_contain: ["{year}-08-31"]
+  # At the "More" level an answer lists every month, and an unmarked July —
+  # missing one account — was described as "a sharp drop". The tool now marks a
+  # partial total on its own line. This holds it: the gap is stated, the drop
+  # is not.
+  - id: caveat-detailed-gap-is-not-a-drop
+    kind: caveat
+    agent: tally
+    detail: detailed
+    question: How has my net worth moved this year?
+    must_contain: ["{year}-07-31"]
+    must_not_contain: ["dropped", "a drop", "fell", "sharp", "declined", "plunge"]
   - id: caveat-1rm-is-an-estimate
     kind: caveat
     agent: forge

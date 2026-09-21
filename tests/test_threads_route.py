@@ -32,7 +32,9 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> TestClient:
     monkeypatch.setattr(threads_route, "readonly_connection", _same)
     monkeypatch.setattr(titles, "for_question", lambda question: "Back squat progress")
 
-    def _answer(agent: object, question: str, today: dt.date) -> Iterator[Event]:
+    def _answer(
+        agent: object, question: str, today: dt.date, detail: str = "normal"
+    ) -> Iterator[Event]:
         yield RoutedEvent(destination="forge", confidence=0.87, router="constrained-json")
         yield ToolEvent("lift_progression", {"exercise": "back squat"})
         yield TokenEvent("Your back squat went up 17.5kg.")
