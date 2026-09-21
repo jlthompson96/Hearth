@@ -3,7 +3,9 @@
 LM Studio speaks the OpenAI protocol, so `ChatOpenAI` reaches it with a
 `base_url` override and a dummy key it ignores. Nothing here knows the name of
 a model: both come from the environment, because they change and a default in
-code is a hardcoded model name by another route.
+code is a hardcoded model name by another route. The chat model can also be
+chosen on the Settings screen, from the models LM Studio itself lists
+(`model_choice`); `.env`'s stays the default and the one the evals measure.
 
 Structured output goes through `json_schema`, not tool calling. LM Studio parses
 tool calls out of model text against a chat template, and at 8B that is
@@ -53,6 +55,24 @@ def _refuse_if_tracing_enabled() -> None:
         )
 
 
+#: The chat model chosen on the Settings screen, or None for `.env`'s
+#: `CHAT_MODEL`. Set when the API starts, from the stored preference, and when
+#: the choice changes (`model_choice.switch`), so the next question uses it with
+#: no restart. One process, one person: a module variable is the whole of it.
+#: The evals never set it, so they always measure `.env`'s model.
+_chosen: str | None = None
+
+
+def use_chat_model(key: str | None) -> None:
+    global _chosen
+    _chosen = key
+
+
+def active_chat_model() -> str:
+    """The model the next call will name."""
+    return _chosen or get_model_settings().chat_model
+
+
 def chat_model(
     *,
     temperature: float = 0.0,
@@ -80,7 +100,7 @@ def chat_model(
     effort = reasoning_effort if reasoning_effort is not None else settings.reasoning_effort
 
     return ChatOpenAI(
-        model=settings.chat_model,
+        model=active_chat_model(),
         base_url=settings.lm_studio_base_url,
         api_key=SecretStr(settings.lm_studio_api_key),
         temperature=temperature,

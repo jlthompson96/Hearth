@@ -32,7 +32,7 @@ import datetime as dt
 import json
 import logging
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Iterator, Sequence
 from decimal import Decimal
 from enum import StrEnum
 
@@ -141,7 +141,7 @@ def _events(
     return answer(message, today=today, detail=detail, history=history)
 
 
-def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
+def _stream(request: ChatRequest, today: dt.date) -> Generator[str, None, None]:
     try:
         with writer_connection() as conn:
             thread_id, created = store.open_thread(
@@ -168,14 +168,32 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
         "thread", {"id": str(thread_id), "created": created, "question_id": str(question_id)}
     )
 
+    #: Every model call and tool run, for the Model log.
+    log: list[LogEntry] = []
+    try:
+        yield from _turn(request, today, history, thread_id, log)
+    finally:
+        # However the turn ended: answered, failed, or abandoned by a client
+        # that stopped listening — the stream is closed and this still runs.
+        # The turn nobody waited for is the one most worth reading.
+        _keep(thread_id, question_id, log)
+
+
+def _turn(
+    request: ChatRequest,
+    today: dt.date,
+    history: Sequence[Exchange],
+    thread_id: uuid.UUID,
+    log: list[LogEntry],
+) -> Iterator[str]:
+    """The turn itself, as SSE frames. Appends every Model log entry to `log`,
+    which the caller keeps."""
     answer: list[str] = []
     tools: list[dict[str, object]] = []
     agent = request.agent.value if request.agent else None
     confidence: Decimal | None = None
     refusal: str | None = None
     results: list[str] = []
-    #: Every model call and tool run, for the Model log. Kept on failure too.
-    log: list[LogEntry] = []
     try:
         for item in _events(request.agent, request.message, today, request.detail, history):
             match item:
@@ -217,7 +235,6 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
         # Nothing is stored for the answer: the question stays, unanswered,
         # which is what happened. The log of how it failed is kept.
         yield _sse("error", {"detail": f"{type(error).__name__}: {error}"})
-        _keep(thread_id, question_id, log)
         return
 
     content = refusal or "".join(answer)
@@ -259,7 +276,6 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
             yield _sse("title", {"id": str(thread_id), "title": title})
     except Exception as error:  # noqa: BLE001 - the answer was delivered; say what was not kept
         yield _sse("error", {"detail": f"the answer was not saved: {type(error).__name__}"})
-    _keep(thread_id, question_id, log)
 
 
 def _keep(thread_id: uuid.UUID, question_id: uuid.UUID, log: list[LogEntry]) -> None:

@@ -315,3 +315,32 @@ def test_a_turn_that_failed_keeps_its_log(
 
 def test_an_unknown_run_is_not_found(client: TestClient) -> None:
     assert client.get(f"/api/model-log/{uuid.uuid4()}").status_code == 404
+
+
+def test_a_turn_abandoned_mid_answer_keeps_its_log(
+    monkeypatch: pytest.MonkeyPatch, conn: sa.Connection
+) -> None:
+    """Seen on a model that reasoned for minutes: the client gave up, the stream
+    was closed, and everything the turn had done so far was thrown away. The
+    turn nobody waited for is the one most worth reading."""
+
+    @contextmanager
+    def _same() -> Iterator[sa.Connection]:
+        yield conn
+
+    def _slow(
+        agent: object, question: str, today: dt.date, detail: str = "normal", history: Any = ()
+    ) -> Iterator[Event]:
+        yield LogEvent(_entry("route", "steward", 400))
+        yield TokenEvent("half an ans")
+        yield TokenEvent("wer, never sent")
+
+    monkeypatch.setattr(chat_route, "writer_connection", _same)
+    monkeypatch.setattr(chat_route, "_events", _slow)
+    stream = chat_route._stream(chat_route.ChatRequest(message="what do I own?"), NOW.date())
+
+    next(stream), next(stream)  # the thread, and the first words of the answer
+    stream.close()  # the client stopped listening
+
+    (run,) = model_log.runs(conn)
+    assert [(s.kind, s.caller) for s in run.chain] == [("route", "steward")]

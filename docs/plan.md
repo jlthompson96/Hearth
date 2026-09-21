@@ -432,6 +432,25 @@ password is ever sent. `.env` is still edited in a text editor: it is read once 
 startup, and a page that edited it would have to restart the server or show values that
 were not in effect.
 
+**Choosing the chat model.** Asked for by the owner the same day. The Settings screen
+lists every chat model LM Studio has and offers only what the card can run, enforced in
+`model_choice.py`: trained for tool use, at most 6 GiB, and able to switch reasoning off.
+Of eleven models on the host, one qualifies — the one in use; a 12B at 7.04 GiB, 20B–80B
+models, a model without tool use and a thinking model that cannot stop reasoning are
+listed with the reason. That last rule came from measuring rather than warning: switched
+to `qwen3-4b-thinking-2507`, routing took 10.9s and 25.8s a call, the title call returned
+nothing, and a question had not finished after five minutes. A switch loads the chosen
+model at 8,192 tokens through LM Studio's own API, then unloads the old one; a round trip
+on the host took 9.1s there and 8.4s back. LM Studio also unloads idle models and reloads
+them with each model's saved settings — 8,192 for the current one, checked — so the
+screen shows each loaded model's length and offers a reload when the model in use has
+drifted. `.env`'s `CHAT_MODEL` stays the default and the one `make eval` measures; the
+choice is a preference, applied without a restart.
+
+The same round trip found a Model log bug: the five-minute turn left nothing in the log,
+because a client that stops listening closed the stream before the entries were kept. They
+are now kept in a `finally`, and a test closes a stream mid-answer to prove it.
+
 **Langfuse — blocked on Docker.** Self-hosted Langfuse needs Postgres, ClickHouse, Redis
 and S3; Docker's WSL2 engine fails on this machine and ClickHouse has no native Windows
 build. Langfuse Cloud is out regardless — it would carry every prompt, balances included,

@@ -1,6 +1,9 @@
 /**
  * Settings: what you can change, and what you can only see.
  *
+ * The chat model can be switched here among the models LM Studio lists and
+ * this card can run; .env's CHAT_MODEL stays the default.
+ *
  * Preferences are saved the moment one changes and are in effect on the next
  * question — they live in Postgres and are read where they are used, so there
  * is no "save and restart". The running configuration is shown read-only: it
@@ -12,7 +15,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { reason } from './api/http'
-import { settings, type Preference, type Settings as SettingsData } from './api/settings'
+import { settings, type Models, type Preference, type Settings as SettingsData } from './api/settings'
 
 /** How each value reads on screen. The API sends the raw value. */
 function choiceLabel(key: string, value: number | string): string {
@@ -38,6 +41,147 @@ function Lock() {
       <rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
       <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
+  )
+}
+
+/** The context length every budget in Hearth is measured against. */
+const CONTEXT = 8192
+
+function gib(bytes: number): string {
+  return `${(bytes / 2 ** 30).toFixed(2)} GiB`
+}
+
+/** The chat model: every one LM Studio has, the ones this card cannot run
+ *  shown with the reason, and a switch that loads before it unloads. */
+function ModelSection({
+  models,
+  onSwitched,
+}: {
+  models: Models
+  onSwitched: (text: string, ok: boolean) => void
+}) {
+  const [picked, setPicked] = useState(models.active)
+  const [switching, setSwitching] = useState<string | null>(null)
+
+  useEffect(() => setPicked(models.active), [models.active])
+
+  const option = models.options.find((o) => o.key === picked)
+  const inUse = models.options.find((o) => o.key === models.active)
+  // Loaded, but not at the length every budget assumes — LM Studio loaded it on
+  // first use with whatever it has saved for it. Merely unloaded after idling
+  // is not drift: it reloads with those same saved settings.
+  const drifted =
+    inUse !== undefined &&
+    inUse.loaded_contexts.length > 0 &&
+    !inUse.loaded_contexts.includes(CONTEXT)
+
+  async function switchTo(key: string | null) {
+    const name = key ?? models.default
+    setSwitching(name)
+    try {
+      await settings.chooseModel(key)
+      onSwitched(`Answering with ${name} from the next question.`, true)
+    } catch (error) {
+      onSwitched(reason(error), false)
+    } finally {
+      setSwitching(null)
+    }
+  }
+
+  if (models.unavailable) {
+    return (
+      <>
+        <p className="notice">{models.unavailable}</p>
+        <p className="muted small">
+          Answering with <code>{models.active}</code>.
+        </p>
+      </>
+    )
+  }
+
+  return (
+    <div className="models">
+      <p className="muted small">
+        Answering with <code>{models.active}</code>
+        {models.active !== models.default && (
+          <>
+            {' '}
+            — chosen here; <code>.env</code> says <code>{models.default}</code>.{' '}
+            <button
+              type="button"
+              className="quiet"
+              disabled={switching !== null}
+              onClick={() => void switchTo(null)}
+            >
+              Use .env&apos;s model
+            </button>
+          </>
+        )}
+      </p>
+      <fieldset disabled={switching !== null}>
+        <legend className="sr-only">Chat model</legend>
+        {models.options.map((o) => (
+          <label key={o.key} className={`model${o.refused ? ' refused-model' : ''}`}>
+            <input
+              type="radio"
+              name="chat-model"
+              value={o.key}
+              checked={picked === o.key}
+              disabled={o.refused !== null}
+              onChange={() => setPicked(o.key)}
+            />
+            <span className="model-name">
+              {o.name}
+              {o.key === models.active && <span className="tag">in use</span>}
+              {o.key === models.active && o.loaded_contexts.length === 0 && (
+                <span className="tag quiet-tag">not loaded</span>
+              )}
+              {o.loaded_contexts.length > 0 && o.key !== models.active && (
+                <span className="tag">loaded</span>
+              )}
+            </span>
+            <span className="muted small model-facts">
+              {o.params ?? '?'} · {gib(o.size_bytes)} ·{' '}
+              {o.measured ? 'measured by make eval' : 'never measured by make eval'}
+            </span>
+            {o.refused && <span className="muted small model-why">Not offered: {o.refused}.</span>}
+            {o.loaded_contexts.some((n) => n !== CONTEXT) && (
+              <span className="small model-warn">
+                Loaded at {o.loaded_contexts.filter((n) => n !== CONTEXT).join(', ')} tokens. Every
+                budget here assumes {CONTEXT.toLocaleString('en-US')}.
+              </span>
+            )}
+          </label>
+        ))}
+      </fieldset>
+      <p className="model-actions">
+        {picked === models.active ? (
+          <button
+            type="button"
+            disabled={switching !== null || !drifted}
+            onClick={() => void switchTo(models.active === models.default ? null : models.active)}
+          >
+            {switching
+              ? `Loading ${switching}…`
+              : drifted
+                ? `Reload at ${CONTEXT.toLocaleString('en-US')} tokens`
+                : 'In use'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={switching !== null || !option || option.refused !== null}
+            onClick={() => void switchTo(picked)}
+          >
+            {switching ? `Loading ${switching}…` : `Switch to ${option?.name ?? picked}`}
+          </button>
+        )}
+        <span className="muted small">
+          Loads it at 8,192 tokens, then unloads the one it replaces. A failed load changes
+          nothing.
+        </span>
+      </p>
+    </div>
   )
 }
 
@@ -112,9 +256,26 @@ export function Settings({ active }: { active: boolean }) {
     <section className="screen">
       <h2>Settings</h2>
       <p className="muted">
-        Preferences change on the next question — nothing restarts. The configuration below them
-        comes from <code>.env</code> and from code, and is shown, not edited.
+        The chat model and preferences change on the next question — nothing restarts. The
+        configuration below them comes from <code>.env</code> and from code, and is shown, not
+        edited.
       </p>
+      {status && (
+        <p className={status.ok ? 'saved' : 'error'} role="status">
+          {status.text}
+        </p>
+      )}
+
+      <h3>Chat model</h3>
+      {data && (
+        <ModelSection
+          models={data.models}
+          onSwitched={(text, ok) => {
+            setStatus({ ok, text })
+            void refresh()
+          }}
+        />
+      )}
 
       <h3>Preferences</h3>
       {data?.preferences.map((preference) => (
@@ -125,11 +286,6 @@ export function Settings({ active }: { active: boolean }) {
           onChange={(value) => void change(preference, value)}
         />
       ))}
-      {status && (
-        <p className={status.ok ? 'saved' : 'error'} role="status">
-          {status.text}
-        </p>
-      )}
 
       {data?.configuration.map((section) => (
         <div key={section.title}>

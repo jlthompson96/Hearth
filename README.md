@@ -161,6 +161,7 @@ text is not in this table, because it is not implemented.
 | **6. No telemetry** | The model connection refuses to build while any tracing variable is on | `tests/test_llm_connection.py` |
 | **7. Iteration caps** | The Steward's hop cap is a conditional edge (6); the specialist loop stops at 4 model calls | `tests/test_steward.py`, `tests/test_guardrails.py` |
 | **The Model log stays on this machine** | Every prompt and reply — balances included — is kept in Postgres, keyed to its question and deleted with its thread, and after 90 days by default. No export, no tracing service: Langfuse is not wired (it would need Docker here, and its cloud is ruled out by rules 5 and 6) | `tests/test_model_log.py`, `tests/test_preferences.py` |
+| **The chat model fits the card** | `model_choice.py`: a model is offered only if it is a chat model, was trained for tool use, is no larger than 6 GiB (CLAUDE.md's ~8B at Q4, with room for the KV cache and embeddings), and can switch reasoning off. A switch loads it at 8,192 tokens before unloading the old one, so a failed load changes nothing | `tests/test_model_choice.py` (a fake LM Studio records every load and unload) |
 | **No setting loosens a guardrail** | `preferences.py`: three preferences, each a fixed list of values — answer length and two retention periods. The hop cap, step cap, follow-up window, pre-flight check and read-only role are shown on the Settings screen locked, and `.env` is never written from a page | `tests/test_preferences.py` |
 | **Real data stays out of the repo** | `HEARTH_DATA_DIR` inside the repository is refused; the evals run on their own fixture database, so no real figure reaches a committed result file | `tests/test_datadir.py`, `evals/conftest.py` |
 
@@ -394,8 +395,8 @@ reasoning text — LM Studio returns it in a field LangChain drops — so it sho
 reasoning's token count and says so. Entries are kept 90 days by default and go with
 their thread.
 
-**Settings** (`#/settings`) has three preferences, saved as you change them and in effect
-on the next question: the answer length a new question starts at, how long threads are
+**Settings** (`#/settings`) chooses the chat model (see "Models" below), and has three
+preferences, saved as you change them and in effect on the next question: the answer length a new question starts at, how long threads are
 kept, and how long the model log is kept. Below them is the running configuration —
 model, endpoint, caps, the follow-up window, the read-only role — read-only, with a lock
 on everything code enforces. `.env` is not edited from the page: it is read once at
@@ -430,6 +431,19 @@ it is the same model on the same GPU, reached over a wire.
 ## Models
 
 Both model names are read from the environment and never hardcoded. Assume they change.
+
+**The chat model can be switched on the Settings screen**, from the models LM Studio lists,
+with no restart. `CHAT_MODEL` stays the default — what the app starts with, what
+`make eval` measures, and what "Use .env's model" returns to. Only what this card can run
+is offered: a chat model trained for tool use, no larger than 6 GiB, that can switch
+reasoning off. The rest are listed with the reason. The reasoning rule was measured, not
+assumed: on `qwen/qwen3-4b-thinking-2507`, which cannot, routing took 10.9s and 25.8s a
+call against 0.4s, every title call spent its tokens reasoning and returned nothing, and a
+question had not finished after five minutes. A switch loads the model at 8,192 tokens,
+then unloads the one it replaces; each option says whether `make eval` has ever measured
+it, because a pass rate belongs to a model. On this machine, today, that leaves one model
+offered — the one in use. Download a small instruct model that is marked for tool use and
+it appears.
 
 **The embedding model is pinned.** Changing `EMBEDDING_MODEL` invalidates every vector in
 the database — a different model produces a different space, and old vectors are not

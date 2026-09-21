@@ -14,6 +14,7 @@ import sqlalchemy as sa
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import make_url
 
+import model_choice
 import preferences
 from api.main import app
 from api.routes import settings as settings_route
@@ -142,6 +143,9 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> TestClient:
     monkeypatch.setattr(settings_route, "readonly_connection", _same)
     monkeypatch.setattr(settings_route, "writer_connection", _same)
     monkeypatch.setattr(threads_route, "readonly_connection", _same)
+    # The model list is LM Studio's; these tests are about preferences and must
+    # not need it running. tests/test_model_choice.py fakes it in full.
+    monkeypatch.setattr(model_choice, "catalog", lambda client=None: [])
     return TestClient(app)
 
 

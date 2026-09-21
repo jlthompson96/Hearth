@@ -229,6 +229,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/chat-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Choose the chat model; loaded now, in effect on the next question
+         * @description Refused unless this card can run it; loaded at 8,192 tokens before the
+         *     model it replaces is unloaded, so a refusal or a failed load changes
+         *     nothing.
+         */
+        put: operations["choose_model_api_settings_chat_model_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/{key}": {
         parameters: {
             query?: never;
@@ -497,6 +519,39 @@ export interface components {
              */
             as_of: string;
         };
+        /** ModelChoiceIn */
+        ModelChoiceIn: {
+            /** Model */
+            model: string | null;
+        };
+        /** ModelOption */
+        ModelOption: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Params */
+            params: string | null;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Loaded Contexts */
+            loaded_contexts: number[];
+            /** Refused */
+            refused: string | null;
+            /** Measured */
+            measured: boolean;
+        };
+        /** ModelsOut */
+        ModelsOut: {
+            /** Active */
+            active: string;
+            /** Default */
+            default: string;
+            /** Options */
+            options: components["schemas"]["ModelOption"][];
+            /** Unavailable */
+            unavailable: string | null;
+        };
         /** NewAccount */
         NewAccount: {
             /** Label */
@@ -596,6 +651,7 @@ export interface components {
         };
         /** SettingsOut */
         SettingsOut: {
+            models: components["schemas"]["ModelsOut"];
             /** Preferences */
             preferences: components["schemas"]["PreferenceOut"][];
             /** Configuration */
@@ -1362,6 +1418,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsOut"];
+                };
+            };
+        };
+    };
+    choose_model_api_settings_chat_model_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelChoiceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
                 };
             };
         };

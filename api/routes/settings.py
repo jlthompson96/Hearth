@@ -8,14 +8,24 @@ that were not in effect, and the guardrails among it — hop cap, step cap,
 follow-up window, the read-only role — are not the page's to loosen. Each is
 marked locked where code enforces it.
 
+The chat model is the exception that proves the rule: it can be changed here,
+because LM Studio can swap models without Hearth restarting. It is chosen from
+the models LM Studio lists and this card can run (`model_choice`), and `.env`'s
+`CHAT_MODEL` stays the default and the one the evals measure.
+
 No password is ever sent. A database is shown as its host and name, never its
 URL.
 """
 
+from pathlib import Path
+
+import httpx
 from fastapi import APIRouter, Response
 from pydantic import BaseModel
 from sqlalchemy.engine import make_url
 
+import llm
+import model_choice
 import preferences
 from agents import conversation
 from agents.loop import MAX_STEPS
@@ -28,9 +38,12 @@ from steward.router import ATTEMPTS, REASONING_EFFORT, ConstrainedJSONRouter
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-#: The window every figure here is measured against. CLAUDE.md's hardware
-#: constraint, loaded in LM Studio; not something Hearth sets.
-CONTEXT_TOKENS = 8192
+#: The window every figure here is measured against: CLAUDE.md's hardware
+#: constraint, and the length a chosen model is loaded at.
+CONTEXT_TOKENS = model_choice.CONTEXT_TOKENS
+
+#: Where `make eval` records its runs; each names the model it measured.
+EVAL_RESULTS = Path(__file__).resolve().parents[2] / "evals" / "results"
 
 
 class PreferenceOut(BaseModel):
@@ -55,9 +68,38 @@ class ConfigSection(BaseModel):
     items: list[ConfigItem]
 
 
+class ModelOption(BaseModel):
+    key: str
+    name: str
+    params: str | None
+    size_bytes: int
+    #: The context length of each loaded instance; empty when not loaded.
+    loaded_contexts: list[int]
+    #: Why this card will not run it; None when it is offered.
+    refused: str | None
+    #: A recorded `make eval` run has measured it.
+    measured: bool
+
+
+class ModelsOut(BaseModel):
+    #: The model the next question will use.
+    active: str
+    #: `.env`'s CHAT_MODEL: the default, and what the evals measure.
+    default: str
+    options: list[ModelOption]
+    #: Set when LM Studio could not be asked for its list.
+    unavailable: str | None
+
+
 class SettingsOut(BaseModel):
+    models: ModelsOut
     preferences: list[PreferenceOut]
     configuration: list[ConfigSection]
+
+
+class ModelChoiceIn(BaseModel):
+    #: A model LM Studio lists, or null for `.env`'s.
+    model: str | None
 
 
 class PreferenceIn(BaseModel):
@@ -78,7 +120,12 @@ def _configuration() -> list[ConfigSection]:
         ConfigSection(
             title="Model",
             items=[
-                item(label="Chat model", value=models.chat_model, locked=False, note="CHAT_MODEL"),
+                item(
+                    label="Chat model",
+                    value=llm.active_chat_model(),
+                    locked=False,
+                    note=f"Chosen above; .env's CHAT_MODEL is {models.chat_model}",
+                ),
                 item(
                     label="Embedding model",
                     value=models.embedding_model,
@@ -86,7 +133,12 @@ def _configuration() -> list[ConfigSection]:
                     note="EMBEDDING_MODEL — changing it means re-embedding everything",
                 ),
                 item(label="Endpoint", value=models.lm_studio_base_url, locked=False),
-                item(label="Context window", value=f"{CONTEXT_TOKENS:,} tokens", locked=False),
+                item(
+                    label="Context window",
+                    value=f"{CONTEXT_TOKENS:,} tokens",
+                    locked=True,
+                    note="A chosen model is loaded at this length",
+                ),
                 item(
                     label="Specialists reason",
                     value=models.reasoning_effort or "model default",
@@ -167,11 +219,67 @@ def _out(values: dict[str, object]) -> list[PreferenceOut]:
     ]
 
 
+def _models() -> ModelsOut:
+    default = get_model_settings().chat_model
+    try:
+        found = model_choice.catalog()
+    except httpx.HTTPError as error:
+        return ModelsOut(
+            active=llm.active_chat_model(),
+            default=default,
+            options=[],
+            unavailable=f"LM Studio did not answer ({type(error).__name__}). Is it running?",
+        )
+    measured = model_choice.measured(EVAL_RESULTS)
+    return ModelsOut(
+        active=llm.active_chat_model(),
+        default=default,
+        options=[
+            ModelOption(
+                key=m.key,
+                name=m.name,
+                params=m.params,
+                size_bytes=m.size_bytes,
+                loaded_contexts=list(m.loaded_contexts),
+                refused=m.refused,
+                measured=m.key in measured,
+            )
+            for m in found
+        ],
+        unavailable=None,
+    )
+
+
 @router.get("", response_model=SettingsOut, summary="Preferences and the running configuration")
 def read_settings() -> SettingsOut:
     with readonly_connection() as conn:
         values = preferences.read(conn)
-    return SettingsOut(preferences=_out(values), configuration=_configuration())
+    return SettingsOut(models=_models(), preferences=_out(values), configuration=_configuration())
+
+
+# Declared before `/{key}`, which would otherwise take this path as a key.
+@router.put(
+    "/chat-model",
+    status_code=204,
+    response_class=Response,
+    summary="Choose the chat model; loaded now, in effect on the next question",
+    responses={422: REFUSALS[422]},
+)
+def choose_model(choice: ModelChoiceIn) -> Response:
+    """Refused unless this card can run it; loaded at 8,192 tokens before the
+    model it replaces is unloaded, so a refusal or a failed load changes
+    nothing."""
+    try:
+        with writer_connection() as conn:
+            model_choice.switch(conn, choice.model)
+    except httpx.HTTPError as error:
+        raise model_choice.ModelRefusedError(
+            f"LM Studio did not answer ({type(error).__name__}). Is it running?"
+        ) from error
+    # Only once the choice is stored: a failed write must not leave the app
+    # answering with a model the next restart would forget.
+    llm.use_chat_model(choice.model)
+    return Response(status_code=204)
 
 
 @router.put(
