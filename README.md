@@ -6,13 +6,174 @@ working over my own data. Everything runs on my machine.
 The rules that govern this codebase are in [CLAUDE.md](CLAUDE.md) — several of them are
 inviolable rather than preferred. The phase plan is in [docs/plan.md](docs/plan.md).
 
-**Status: Phases 5, 6 and 11 complete.** Ask a question and the **Steward** routes it to a
-specialist — **Tally** for finances, **Forge** for training — or declines it when no record
-can answer it. The answer streams back over SSE with the figure the tool computed, to the
-cent, and the coverage gaps stated before the trend.
+**Status: Phases 0–8 and 11 complete; 9, 10 and 12 to go.** Ask a question and the
+**Steward** routes it to a specialist — **Tally** for finances, **Forge** for training — or
+declines it when no record can answer it. The answer streams back with the figure the tool
+computed, to the cent, and coverage gaps stated before the trend. Conversations are stored
+and searchable. Fidelity positions exports import from a folder outside the repo; the
+first real import is the next step, and it is yours to run.
 
 You do not say which specialist you want. Routing is a constrained-JSON classifier and it
 is measured: 60/60 on a 20-case labelled set, every case unanimous across three runs.
+
+## Architecture
+
+Everything below runs on one machine. The only planned exception is Errand's web search
+(Phase 9), which will pass an egress filter and be logged.
+
+```mermaid
+flowchart LR
+  subgraph browser["Browser — React + Vite"]
+    chatUI["Chat + thread panel"]
+    importsUI["Data & imports"]
+    entryUI["Manual entry"]
+  end
+
+  subgraph api["FastAPI — localhost:8000"]
+    chatRoute["/api/chat — SSE"]
+    threadsRoute["/api/threads"]
+    dataRoutes["/api/imports<br/>/api/accounts"]
+  end
+
+  subgraph answering["Answering a turn"]
+    steward["Steward<br/>constrained-JSON router<br/>hop cap in code"]
+    declined["Declined<br/>no record answers it"]
+    tally["Tally<br/>finance"]
+    preflight["Pre-flight check<br/>code, not a prompt"]
+    forge["Forge<br/>training"]
+    tools["Query tools<br/>compute every figure"]
+  end
+
+  subgraph writing["Writing"]
+    history["history<br/>threads, search, titles<br/>one-year retention"]
+    ingest["ingest<br/>Fidelity normalizer<br/>manual entry"]
+  end
+
+  lmstudio[("LM Studio<br/>localhost:1234<br/>4B chat model")]
+  pg[("Postgres 17<br/>hearth")]
+  datadir[/"HEARTH_DATA_DIR<br/>real CSVs, outside the repo"/]
+  evals["make eval<br/>40 cases x 3 runs"]
+  evaldb[("hearth_eval<br/>fixture, rebuilt each run")]
+
+  subgraph planned["Planned"]
+    errand["Errand — web search<br/>Phase 9"]
+    searx[("SearXNG<br/>self-hosted")]
+    rag["RAG over pgvector<br/>Phase 10"]
+    mcp["MCP connections<br/>Phase 12"]
+  end
+
+  chatUI --> chatRoute
+  chatUI --> threadsRoute
+  importsUI --> dataRoutes
+  entryUI --> dataRoutes
+
+  chatRoute --> steward
+  steward --> tally
+  steward --> preflight --> forge
+  steward --> declined
+  tally --> tools
+  forge --> tools
+  tools -- "read-only role" --> pg
+  steward -. "which specialist?" .-> lmstudio
+  tally -. "prompt + tool results" .-> lmstudio
+  forge -. "prompt + tool results" .-> lmstudio
+
+  chatRoute --> history
+  threadsRoute --> history
+  history -. "title, reasoning off" .-> lmstudio
+  history -- "read-write role" --> pg
+  datadir --> ingest
+  dataRoutes --> ingest
+  ingest -- "read-write role" --> pg
+
+  evals --> tally
+  evals --> forge
+  evals -. "tools read" .-> evaldb
+
+  steward -.-> errand -.-> searx
+  steward -.-> rag
+  steward -.-> mcp
+
+  classDef store fill:#1a1714,stroke:#7fb069,color:#ede8e3
+  classDef future stroke-dasharray: 5 5,color:#9a918a
+  class pg,evaldb,lmstudio,searx store
+  class errand,searx,rag,mcp future
+```
+
+Two roles reach the database, and the split is structural rather than a convention. Every
+figure the model sees comes through the **read-only role**; the model never writes SQL, and
+the connection it reads through could not write if it did. Only `ingest` and `history`
+hold the read-write connection, and no tool can reach either.
+
+One turn, end to end:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant UI as Chat (browser)
+  participant API as /api/chat
+  participant DB as Postgres
+  participant S as Steward
+  participant A as Tally or Forge
+  participant M as LM Studio
+
+  UI->>API: question (+ thread id)
+  API->>DB: store the question
+  API-->>UI: thread
+  API->>S: route
+  S->>M: which specialist? (constrained JSON)
+  S-->>UI: routed — who is answering
+  S->>A: dispatch
+  A->>M: question + tool schemas
+  M-->>A: tool call and its arguments
+  A->>DB: fixed query, read-only role
+  A->>M: tool result — figures already computed
+  M-->>A: answer text
+  A-->>UI: tokens, streamed
+  API->>DB: store the answer
+  API->>M: title (first turn only, reasoning off)
+  API-->>UI: title
+```
+
+The model never does arithmetic and never sees raw records: step 11 hands it figures a
+Python function already computed and rounded, and the evals assert that exact figure
+appears in the answer.
+
+## Roadmap
+
+Effort was sized in evenings; the full reasoning for each phase, including what each
+measurement found, is in [docs/plan.md](docs/plan.md).
+
+| Phase | What | Status | Exit criterion → result |
+|---|---|---|---|
+| 0 | Scaffold | Done | `/health` serves, Vite runs |
+| 1 | Data layer: schema, read-only role, golden fixture | Done | Migrations go up and down; the read-only role provably cannot write |
+| 2 | Ingestion: Fidelity positions import, manual entry | Done over fake exports — **first real import pending** | The same file twice is a no-op; a malformed file writes nothing, even after its raw rows were stored |
+| 3 | Query and compute tools | Done | Every tool tested, partial coverage included |
+| 4 | Model connection | Done | Constrained JSON schema-valid 10/10 → **30/30** |
+| 5 | Tally, end to end | Done | Net worth exact to the cent with the coverage gap stated → **3/3** |
+| 6 | Steward and routing | Done | Routing ≥ 90% → **60/60**; a delegation loop stops at 6 hops |
+| 7 | Eval harness | Done | A prompt edit moves a number → caveat cases 3/3 → 0/3 → 3/3; baseline **40/40, 120/120** |
+| 8 | Thread history | Done | Last week's thread found by a word you remember → found by "squat" and by "squatting" |
+| 9 | Errand and egress (web search) | **Blocked** — SearXNG needs Docker or a native install | A prompt engineered to leak a balance into a search raises `EgressViolation` |
+| 10 | RAG over documents | **Blocked** — pgvector needs an MSVC build | Retrieval traceable per answer; context stays within budget |
+| 11 | Forge (training) | Done over the fixture; real fitness data source open | Refusal path tested → 32 pre-flight tests |
+| 12 | MCP connections | Not started | Tool-schema cost visible and under a ceiling; no remote server |
+
+Open, in the order they matter:
+
+1. **The first real import** (Phase 2). Only the export's header has been seen; the rows
+   under it are the real test.
+2. **Where the pre-flight check runs.** It guards Forge, and the UI reaches Forge through
+   the Steward — which can route a disordered-eating question elsewhere, past the check.
+   Moving it ahead of routing needs its patterns narrowed first, or it refuses finance
+   questions that say "purge".
+3. **Fitness data source** — an app export, or manual entry (Phase 11 runs on the fixture).
+4. **SearXNG without Docker** (Phase 9) and **pgvector on Windows** (Phase 10).
+
+Cut deliberately: voice, a third agent, proactive alerts, multi-model routing and
+transaction-level ingestion — each for a reason the plan records. Backlog, unscheduled:
+a morning digest, CSV and chart export, and a model-log browser.
 
 ## Prerequisites
 
