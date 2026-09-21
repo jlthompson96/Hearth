@@ -8,6 +8,7 @@ a model and runs in about three seconds.
 - `cases.yaml` — the cases, in five kinds
 - `runner.py` — loading, running, recording. No pytest in it
 - `test_cases.py` — a shell over the runner, one pytest case per case
+- `conftest.py` — builds `hearth_eval`, the evals' own copy of the fixture
 - `results/<sha>.json` — recorded runs, committed
 
 ## The five kinds
@@ -45,6 +46,17 @@ rate. `all_runs: true` demands every run pass, and routing and refusal cases all
 carry it: a refusal that holds two times in three is not a refusal, and a route
 that lands correctly two times in three sends every third question to the wrong
 agent.
+
+## The database
+
+Evals run against `hearth_eval`, a database of their own, dropped and rebuilt
+from the golden fixture at the start of every run (`conftest.py`). They never
+open the development database, and do not need `make seed` first.
+
+That separation matters from Phase 2 on, when the development database holds
+real imports. Graded against real balances the cases would fail, and a failing
+case's result keeps the opening of the answer — in a file that is committed. The
+fixture asserts which database the tools are reading before any case runs.
 
 ## The date
 
