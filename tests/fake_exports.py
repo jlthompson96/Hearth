@@ -8,6 +8,13 @@ What the rows below the header look like was never seen, only reasoned about,
 so the cash line, the pending line and the disclaimer footer are guesses at
 the shape. The importer is strict precisely so that a wrong guess fails loudly
 on the first real file rather than importing something plausible.
+
+The first real import (2026-09-21) went through without a refusal and both
+account totals matched Fidelity's. What it confirmed, from counts and shapes
+only: the money-market line does carry a value and no quantity or price; its
+footer fits the one-cell-per-line rule; it had no pending-activity line; and
+it had a position with a negative quantity and value, which this fixture did
+not — see test_fidelity.py.
 """
 
 HEADER = (

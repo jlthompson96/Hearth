@@ -35,7 +35,7 @@ GIN index on `to_tsvector('english', message.content)`.
 
 **Exit:** migrations up and down cleanly. Read-only role provably cannot write.
 
-## Phase 2 — Ingestion (3–4) — DONE over fake exports; first real import pending
+## Phase 2 — Ingestion (3–4) — DONE, verified on a real export
 
 `Normalizer` protocol, one institution, SHA-256 idempotency, raw rows stored before
 normalization, loud failure on unknown headers. Manual entry form in React.
@@ -67,6 +67,15 @@ Three things the phase needed that the plan did not list:
 - **Rule 4 is enforced before storage, not after.** Raw rows are stored whole, so a column
   or account name that looks like an account number — four digits in a row — is refused
   before the first insert, as is a filename carrying one.
+
+**The first real import, 2026-09-21: no refusals, and both account totals matched
+Fidelity's to the cent.** Seventeen rows, all stored raw and all normalized. What it
+settled, checked from counts and shapes so no real figure entered the session: the
+money-market line is a value with no quantity or price, as guessed; the footer fits the
+one-cell-per-line rule; there was no pending-activity line; and one position had a
+negative quantity and value — a short or a written option — which the fixture had never
+had, and now does. The balance is a sum the importer computes because the export has no
+balance column, and this was the check that the sum is the right one.
 
 Screens: Data & imports and Manual entry, both from the Design canvas. Manual entry
 creates accounts (an import never does: the export cannot say what kind each is) and

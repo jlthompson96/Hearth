@@ -181,3 +181,21 @@ def test_the_same_symbol_twice_in_one_account_is_refused_not_merged() -> None:
     two would be a decision about what the export meant; refusing is not."""
     with pytest.raises(RowRefused, match="rows 2 and 3"):
         _normalize(ROWS[0], ROWS[0].replace(",Cash", ",Margin"))
+
+
+def test_a_position_you_owe_has_a_negative_quantity_and_value() -> None:
+    """The first real import carried one of these and the fixture had none: a
+    negative share count with a negative value — a short position or a written
+    option. It is a liability, the account's own total subtracts it, and Hearth
+    stores the value the export states rather than multiplying anything out."""
+    written = (
+        "Roth IRA,-FAKE261016C100,CALL (FAKE) OCT 16 26 $100,-1,$2.50,+$0.10,-$250.00,"
+        "-$10.00,-4.17%,+$50.00,+16.67%,-1.17%,$300.00,$3.00,Cash"
+    )
+    normalized = FidelityPositions().normalize(read_export(export(ROWS[3], written), FILENAME).rows)
+    option = next(h for h in normalized.holdings if h.symbol.startswith("-FAKE"))
+
+    assert option.quantity == Decimal("-1")
+    assert option.market_value == Decimal("-250.00")
+    # 21,600.00 - 250.00: the sum the balance is, checked to the cent.
+    assert normalized.balances["Roth IRA"] == Decimal("21350.00")

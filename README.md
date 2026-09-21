@@ -10,8 +10,8 @@ inviolable rather than preferred. The phase plan is in [docs/plan.md](docs/plan.
 **Steward** routes it to a specialist — **Tally** for finances, **Forge** for training — or
 declines it when no record can answer it. The answer streams back with the figure the tool
 computed, to the cent, and coverage gaps stated before the trend. Conversations are stored
-and searchable. Fidelity positions exports import from a folder outside the repo; the
-first real import is the next step, and it is yours to run.
+and searchable. Fidelity positions exports import from a folder outside the repo, and
+the first real one matched Fidelity's totals to the cent.
 
 You do not say which specialist you want. Routing is a constrained-JSON classifier and it
 is measured: 60/60 on a 20-case labelled set, every case unanimous across three runs.
@@ -168,7 +168,7 @@ measurement found, is in [docs/plan.md](docs/plan.md).
 |---|---|---|---|
 | 0 | Scaffold | Done | `/health` serves, Vite runs |
 | 1 | Data layer: schema, read-only role, golden fixture | Done | Migrations go up and down; the read-only role provably cannot write |
-| 2 | Ingestion: Fidelity positions import, manual entry | Done over fake exports — **first real import pending** | The same file twice is a no-op; a malformed file writes nothing, even after its raw rows were stored |
+| 2 | Ingestion: Fidelity positions import, manual entry | Done — **verified on a real export**, totals match Fidelity's | The same file twice is a no-op; a malformed file writes nothing, even after its raw rows were stored |
 | 3 | Query and compute tools | Done | Every tool tested, partial coverage included |
 | 4 | Model connection | Done | Constrained JSON schema-valid 10/10 → **30/30** |
 | 5 | Tally, end to end | Done | Net worth exact to the cent with the coverage gap stated → **3/3** |
@@ -182,10 +182,8 @@ measurement found, is in [docs/plan.md](docs/plan.md).
 
 Open, in the order they matter:
 
-1. **The first real import** (Phase 2). Only the export's header has been seen; the rows
-   under it are the real test.
-2. **Fitness data source** — an app export, or manual entry (Phase 11 runs on the fixture).
-3. **SearXNG without Docker** (Phase 9) and **pgvector on Windows** (Phase 10).
+1. **Fitness data source** — an app export, or manual entry (Phase 11 runs on the fixture).
+2. **SearXNG without Docker** (Phase 9) and **pgvector on Windows** (Phase 10).
 
 Cut deliberately: voice, a third agent, proactive alerts, multi-model routing and
 transaction-level ingestion — each for a reason the plan records. Backlog, unscheduled:
