@@ -239,6 +239,7 @@ genuine 8B at Q4 means re-measuring every number in `evals/results/`.
 make dev          # docker compose up + backend + frontend
 make migrate      # alembic upgrade head
 make seed         # load the golden fixture dataset
+make unseed       # empty the development database, before a first real import
 make test         # pytest — fast, no model, run it after every edit
 make eval         # the behavioural case file — needs the model, takes minutes
 make lint         # ruff + mypy + tsc
@@ -261,8 +262,8 @@ and a day, it is a rate rather than a pass, and letting it into the fast loop ma
 fast loop slow — which is how it stops being run. See [evals/README.md](evals/README.md).
 
 `make hooks` installs a pre-commit reminder that notices when you stage a change to
-`prompts/` or `agents/` — the files whose effect is only visible as a pass rate — and tells
-you to re-measure. It blocks nothing and runs nothing: a hook that costs ten minutes is a
+`prompts/`, `agents/` or `tools/bindings.py` — the files whose effect is only visible as a
+pass rate — and tells you to re-measure. It blocks nothing and runs nothing: a hook that costs ten minutes is a
 hook that gets bypassed.
 
 The commands whose phase has not landed fail with a message saying so rather than a
@@ -283,6 +284,7 @@ config.py     Environment configuration, split so the API boots without a model 
 steward/      The orchestrator. Routes each turn to a specialist.      (Phase 6)
 agents/       Tally (finance, Phase 5) and Forge (fitness, Phase 11).
 tools/        finance.py and fitness.py — every figure an agent reports.
+ingest/       CSV import and manual entry: the only writes of financial data. (Phase 2)
               Errand, the one thing that leaves the house, lands in Phase 9.
 prompts/      Agent prompts as version-controlled Markdown, never inline literals.
 db/           Schema and shared column types. NUMERIC throughout.
@@ -296,18 +298,54 @@ docker/       Postgres init and SearXNG configuration.
 
 ## Data
 
-`make seed` loads the golden fixture: four accounts over 2024, with coverage deliberately
-uneven — the brokerage account opens in March, and one month of retirement data is missing,
-as though an export skipped it. A fixture where every account has every month would let a
-net worth trend look right while the coverage handling underneath it was broken. `make seed`
-refuses to run if imported data is present unless passed `--force`.
+`make seed` loads the golden fixture into the development database: five invented
+accounts over the current year, with coverage deliberately uneven — the brokerage account
+opens in March, and one month of retirement data is missing, as though an export skipped
+it. A fixture where every account has every month would let a net worth trend look right
+while the coverage handling underneath it was broken.
 
-Real CSVs live outside this repo, at `$HEARTH_DATA_DIR`. They are never created, copied or
-pasted into the workspace. Fixtures in the repo are fake, and the golden dataset used by
-`make seed` and `make eval` contains invented figures only.
+The evals do not read that database. They rebuild the fixture in `hearth_eval` at the start
+of every run, so real data in the development database never reaches an eval result — and
+eval results are committed.
 
-Data enters through CSV import or manual entry, triggered by hand. There are no live
-financial connections, and there will not be.
+`make seed` and `make unseed` refuse if the database holds real data — an import, or an
+account created by hand — unless passed `--force`.
+
+### Importing
+
+Real exports live outside this repo, in the folder `HEARTH_DATA_DIR` names in `.env`. It
+must be an absolute path outside the repository; the app refuses to read one inside it.
+**Data & imports** lists the `.csv` files there. Nothing is uploaded — the API accepts a
+file *name*, never a path, and reads it from that folder.
+
+The first time:
+
+1. `make unseed`. Real data is refused beside the fixture: a net worth summed across
+   invented accounts and real ones is neither.
+2. In **Manual entry**, create one account per account in the export, labelled exactly as
+   the export names it (Fidelity: the `Account name` column). A label with four digits in a
+   row is refused — it could be an account number or its last four (rule 4).
+3. In **Data & imports**, confirm the date and import. A date in the filename is offered;
+   the import refuses any other date for that file.
+4. Check each account's balance against the total the institution shows. There is no
+   balance column in a positions export: the balance is the sum of that account's
+   `Current value` rows.
+
+One layout is read: Fidelity's positions export, matched on its exact header. Everything
+else is refused and nothing is written — an unknown layout (the error names the nearest
+known one and which columns differ), a column or account name that looks like an account
+number, a date that disagrees with the filename, a cell that is not what its column
+promises, an account Hearth has no label for, or a figure already recorded for that
+account and day. An error shows a cell's *shape*, digits masked (`'$##,###.###'`), never
+its value, so it can be pasted into a question without the balance. Importing the same
+file again is a no-op.
+
+Raw rows are kept in `import_row` exactly as they arrived, and
+`ingest.importer.renormalize()` rebuilds an import's snapshots from them alone — the
+recovery path for a normalizer bug found after the export is gone.
+
+Balances can also be entered by hand, as US currency; a liability is negative. There are no
+live financial connections, and there will not be.
 
 ## What leaves the machine
 

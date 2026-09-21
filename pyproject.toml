@@ -14,7 +14,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "N"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["api", "config.py", "db", "llm.py", "scripts", "tests", "tools"]
+files = ["api", "config.py", "db", "ingest", "llm.py", "scripts", "tests", "tools"]
+# tests/ has no __init__.py, and a test importing a helper as `tests.fake_exports`
+# otherwise meets the same file under two module names. Resolve every path from
+# the repo root, which is also how pytest's `pythonpath = ["."]` sees them.
+explicit_package_bases = true
 exclude = "(^|/)(\\.venv|web|migrations/versions)/"
 
 [[tool.mypy.overrides]]

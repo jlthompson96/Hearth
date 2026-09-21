@@ -35,13 +35,43 @@ GIN index on `to_tsvector('english', message.content)`.
 
 **Exit:** migrations up and down cleanly. Read-only role provably cannot write.
 
-## Phase 2 — Ingestion (3–4) — BLOCKED on real CSV headers
+## Phase 2 — Ingestion (3–4) — DONE over fake exports; first real import pending
 
 `Normalizer` protocol, one institution, SHA-256 idempotency, raw rows stored before
 normalization, loud failure on unknown headers. Manual entry form in React.
 
 **Exit:** importing the same file twice makes the second a no-op. A malformed file fails
-with no partial writes.
+with no partial writes. **Met** over invented rows under the real header:
+`tests/test_importer.py` holds both, and "no partial writes" is taken at its hard end — a
+file whose raw rows are already stored when row 5 fails to normalize leaves nothing
+behind. That test was shown to fail with the savepoint removed before it was trusted.
+
+The institution is Fidelity, and the one thing ever seen of its export is the header row —
+fifteen columns, no account number among them. Everything under it in the tests is a guess
+at the shape: the cash line with no quantity, a pending-activity line, a disclaimer
+footer. So the importer is strict rather than tolerant, and the first real import is the
+real test. What it gets wrong it refuses, naming the row, the column and the cell's shape
+with its digits masked, so the error can be read out without the balance. The balance is
+the sum of an account's `Current value` rows — the export has no balance column — and the
+first real import should be checked against the total Fidelity shows.
+
+Three things the phase needed that the plan did not list:
+
+- **The evals moved to their own database first.** `make eval` read the development
+  database, which was about to hold real balances, and a failing case writes the opening
+  of the answer into a committed file. `hearth_eval` is rebuilt from the fixture on every
+  run.
+- **Real data is refused beside the fixture.** A net worth summed across invented accounts
+  and real ones is neither. `make unseed` empties the database for a first import, and
+  both it and `make seed` refuse to delete real data without `--force`.
+- **Rule 4 is enforced before storage, not after.** Raw rows are stored whole, so a column
+  or account name that looks like an account number — four digits in a row — is refused
+  before the first insert, as is a filename carrying one.
+
+Screens: Data & imports and Manual entry, both from the Design canvas. Manual entry
+creates accounts (an import never does: the export cannot say what kind each is) and
+records balances as US currency. Imports and hand-entered balances can be removed; an
+imported balance only with its import.
 
 ## Phase 3 — Query and compute tools (2)
 
@@ -235,15 +265,20 @@ transaction-level ingestion (drags in merchant categorization).
 
 ## Open questions
 
-1. CSV header row from one institution — unblocks Phase 2
-2. Fitness data: app export or manual? — unblocks Phase 11
-3. SearXNG without Docker — blocks Phase 9. See the Postgres answer below: that machine
+1. Fitness data: app export or manual? — unblocks Phase 11
+2. SearXNG without Docker — blocks Phase 9. See the Postgres answer below: that machine
    has no working Docker, and SearXNG is a compose service. Either Docker gets fixed or
    SearXNG runs natively.
-4. pgvector on the host — blocks Phase 10 alongside nothing else now that the embedding
+3. pgvector on the host — blocks Phase 10 alongside nothing else now that the embedding
    model is chosen. It needs an MSVC build on Windows. Nothing earlier touches a vector
    column, so it can wait, but Phase 10 must install it and assert it rather than
    inheriting the test harness's warning.
+
+**Answered:** the CSV header — Fidelity's positions export, `Portfolio_Positions_<Mon>-<DD>-<YYYY>.csv`:
+`Account name, Symbol, Description, Quantity, Last price, Last price change, Current value,
+Today's gain/loss dollar, Today's gain/loss percent, Total gain/loss dollar, Total gain/loss
+percent, Percent of account, Cost basis total, Average cost basis, Type`. No account-number
+column. Phase 2 is built on it; the rows beneath it have not been seen.
 
 **Answered:** LM Studio runs as the Windows app on the GPU host. No WSL anywhere — so the
 host toolchain is Windows-native, and `make` as written is Unix-only.

@@ -236,3 +236,252 @@ h1 {
   white-space: pre-wrap;
   font-size: 0.9375rem;
 }
+
+/* --- screens (Phase 2) ------------------------------------------------------ */
+
+.tabs {
+  display: flex;
+  gap: 1.25rem;
+  padding-top: 0.875rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs a {
+  padding-bottom: 0.625rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tabs a[aria-current='page'] {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+
+/* Every screen stays mounted; only one shows. `display: flex` would override
+   the hidden attribute, so hidden is restated. */
+.view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.view[hidden] { display: none; }
+
+.screen { padding: 1.5rem 0 2rem; }
+
+.screen h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.screen h3 {
+  margin: 1.75rem 0 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.small { font-size: 0.8125rem; }
+
+code {
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 0.85em;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Something about the state of things you need to act on — not an error in
+   what you just did. */
+.notice {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--down);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.table th {
+  padding: 0 0.5rem 0.5rem;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.table td {
+  padding: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.table th:first-child,
+.table td:first-child { padding-left: 0; }
+
+.table th:last-child,
+.table td:last-child { padding-right: 0; }
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th.num { text-align: right; }
+
+.filename {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 0.8125rem;
+  word-break: break-all;
+}
+
+.files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.file .muted { margin: 0.25rem 0 0; }
+
+.inline {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.screen input,
+.screen select {
+  padding: 0.4375rem 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.screen input:focus,
+.screen select:focus {
+  outline: none;
+  border-color: var(--muted);
+}
+
+.screen button {
+  padding: 0.4375rem 0.875rem;
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  background: var(--fg);
+  color: var(--bg);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.screen button:disabled {
+  background: var(--raised);
+  color: var(--muted);
+  cursor: default;
+}
+
+.screen button.quiet {
+  padding: 0.125rem 0.5rem;
+  background: none;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.8125rem;
+}
+
+.screen button.quiet:hover { color: var(--negative); }
+
+.imported,
+.refused {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--raised);
+}
+
+.refused { border-left: 2px solid var(--negative); }
+
+.imported-title,
+.refused-title {
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.refused p:last-child {
+  margin: 0;
+  line-height: 1.55;
+  font-size: 0.875rem;
+}
+
+.imported .muted { margin: 0.75rem 0 0; }
+
+.forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--raised);
+}
+
+.card h3 { margin: 0 0 0.25rem; }
+
+.card label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.card input,
+.card select { background: var(--bg); }
+
+.card .muted.small { margin: -0.25rem 0 0; }
+
+.card button { align-self: flex-start; }
+
+.card .error { margin: 0; }

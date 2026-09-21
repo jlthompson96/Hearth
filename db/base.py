@@ -49,11 +49,14 @@ timestamp = Annotated[
 #: Currency amounts. Two decimal places, room for a balance no one here has.
 money = Annotated[Decimal, mapped_column(Numeric(18, 2), nullable=False)]
 
-#: Share counts and similar. Fractional shares go to eight places.
-quantity = Annotated[Decimal, mapped_column(Numeric(24, 8), nullable=False)]
+#: Share counts and similar. Fractional shares go to eight places. Nullable: a
+#: cash line in a positions export reports what it is worth and no share count,
+#: and inventing one — the value, at a price of $1.00 — would be a guess stored
+#: as a fact.
+quantity = Annotated[Decimal | None, mapped_column(Numeric(24, 8), nullable=True)]
 
 #: Unit prices, which carry more precision than the totals they produce.
-price = Annotated[Decimal, mapped_column(Numeric(18, 6), nullable=True)]
+price = Annotated[Decimal | None, mapped_column(Numeric(18, 6), nullable=True)]
 
 #: Physical measurements: body mass, lifted load, distance.
 measurement = Annotated[Decimal, mapped_column(Numeric(12, 3), nullable=False)]

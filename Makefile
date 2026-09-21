@@ -22,7 +22,7 @@ export
 
 API_PORT ?= 8000
 
-.PHONY: dev migrate seed test eval lint fmt install up down logs freeze clean hooks
+.PHONY: dev migrate seed unseed test eval lint fmt install up down logs freeze clean hooks
 
 ## dev — docker compose up + backend + frontend
 dev: install up
@@ -40,6 +40,10 @@ migrate: install
 seed: install
 	@test -f scripts/seed.py || { echo "The golden fixture lands in Phase 1 (docs/plan.md)."; exit 1; }
 	$(PY) -m scripts.seed
+
+## unseed — empty the development database, before a first real import
+unseed: install
+	$(PY) -m scripts.seed --empty
 
 ## test — pytest
 test: install

@@ -7,7 +7,8 @@ The evals reuse this dataset, which makes determinism a requirement rather than
 a nicety: a case that asserts "$104,200.00 appears verbatim in the answer" is
 only meaningful if the same seed always produces the same balance. Identifiers
 are derived with uuid5 from a fixed namespace, so even the primary keys are
-stable across runs and machines.
+stable across runs and machines. The evals do not read the development
+database: they rebuild this fixture in `hearth_eval` on every run.
 
 The shape of the data is deliberate. Coverage is uneven — the brokerage account
 opens partway through the year, and one month of retirement data is missing, as
@@ -15,7 +16,8 @@ though an export skipped it. A fixture where every account has every month
 would let a net worth trend look correct while the coverage handling underneath
 it was entirely broken.
 
-    make seed
+    make seed      # load it into the development database
+    make unseed    # empty the development database, before a first real import
 """
 
 import argparse
@@ -83,6 +85,11 @@ LIFTS = {"back squat": ("100.000", "2.500"), "bench press": ("70.000", "1.250")}
 
 def _id(kind: str, key: str) -> uuid.UUID:
     return uuid.uuid5(NAMESPACE, f"{kind}:{key}")
+
+
+#: How the importer recognises a database holding this fixture. Account ids do
+#: not depend on the year, so these hold in any year the fixture was built for.
+FIXTURE_ACCOUNT_IDS = frozenset(_id("account", label) for label in ACCOUNTS)
 
 
 def seed(session: Session) -> dict[str, int]:
@@ -209,6 +216,11 @@ TABLES = [
     "message",
     "thread",
     "search_audit",
+    # Batches go with their snapshots. Left behind, a batch whose snapshots had
+    # been truncated would make re-importing that file a silent no-op — the
+    # hash matches, so nothing is written, and the data never comes back.
+    "import_row",
+    "import_batch",
 ]
 
 
@@ -217,27 +229,41 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="seed even though imported data is present (it will be deleted)",
+        help="go ahead even though real data is present (it will be deleted)",
+    )
+    parser.add_argument(
+        "--empty",
+        action="store_true",
+        help="empty every table and load nothing: the step before a first real import",
     )
     args = parser.parse_args(argv)
 
     engine = sa.create_engine(get_settings().database_url)
 
     with Session(engine) as session:
+        # Real data is anything this script did not put here: an import, or an
+        # account created by hand. Both are deleted by what follows.
         imported = session.execute(sa.text("select count(*) from import_batch")).scalar_one()
-        if imported and not args.force:
+        created = session.execute(
+            sa.text("select count(*) from account where not (id = any(:ids))"),
+            {"ids": list(FIXTURE_ACCOUNT_IDS)},
+        ).scalar_one()
+        if (imported or created) and not args.force:
             print(
-                f"Refusing to seed: {imported} import batch(es) present. This "
-                "database holds imported data, and seeding deletes it. Re-run "
-                "with --force if that is genuinely what you want.",
+                f"Refusing to {'empty' if args.empty else 'seed'}: this database holds "
+                f"real data ({imported} import batch(es), {created} account(s) created "
+                "by hand), and this deletes it. Re-run with --force if that is "
+                "genuinely what you want.",
                 file=sys.stderr,
             )
             return 1
 
         session.execute(sa.text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
-        counts = seed(session)
+        counts = {} if args.empty else seed(session)
         session.commit()
 
+    if args.empty:
+        print("  emptied. Ready for a first import; the evals keep their own copy.")
     for table, count in counts.items():
         print(f"  {count:>4}  {table}")
     return 0

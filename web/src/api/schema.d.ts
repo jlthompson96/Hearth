@@ -38,16 +38,190 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Exports in the data folder */
+        get: operations["list_files_api_imports_files_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Everything imported, newest first */
+        get: operations["list_imports_api_imports_get"];
+        put?: never;
+        /** Import one export from the data folder */
+        post: operations["create_import_api_imports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Take an import back out, with its snapshots */
+        delete: operations["delete_import_api_imports__batch_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Accounts and recent entries */
+        get: operations["list_accounts_api_accounts_get"];
+        put?: never;
+        /** Create an account */
+        post: operations["create_account_api_accounts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/balances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a balance by hand */
+        post: operations["record_balance_api_balances_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/balances/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a balance entered by hand */
+        delete: operations["delete_balance_api_balances__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Account */
+        Account: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Kind */
+            kind: string;
+            /** Currency */
+            currency: string;
+            /** Opened On */
+            opened_on: string | null;
+            /** Closed On */
+            closed_on: string | null;
+            /** Latest As Of */
+            latest_as_of: string | null;
+            /** Latest Balance */
+            latest_balance: string | null;
+        };
+        /** AccountImported */
+        AccountImported: {
+            /** Label */
+            label: string;
+            /** Balance */
+            balance: string;
+            /** Holdings */
+            holdings: number;
+        };
+        /** AccountListing */
+        AccountListing: {
+            /** Fixture Loaded */
+            fixture_loaded: boolean;
+            /** Kinds */
+            kinds: string[];
+            /** Accounts */
+            accounts: components["schemas"]["Account"][];
+            /** Recent */
+            recent: components["schemas"]["Entry"][];
+        };
         /**
          * Agent
          * @description A specialist named directly, bypassing the Steward.
          * @enum {string}
          */
         Agent: "tally" | "forge";
+        /** Batch */
+        Batch: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Source Label */
+            source_label: string;
+            /** Normalizer */
+            normalizer: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Rows */
+            rows: number;
+            /** Status */
+            status: string;
+            /**
+             * Imported At
+             * Format: date-time
+             */
+            imported_at: string;
+        };
         /**
          * ChatRequest
          * @description Declared so the TypeScript client is generated rather than hand-written.
@@ -58,6 +232,49 @@ export interface components {
             agent?: components["schemas"]["Agent"] | null;
             /** Today */
             today?: string | null;
+        };
+        /** Entry */
+        Entry: {
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Balance */
+            balance: string;
+        };
+        /** ExportFile */
+        ExportFile: {
+            /** Name */
+            name: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * Modified At
+             * Format: date-time
+             */
+            modified_at: string;
+            /** Date In Name */
+            date_in_name: string | null;
+            /** Imported Batch */
+            imported_batch: string | null;
+            /** Imported As Of */
+            imported_as_of: string | null;
+        };
+        /** ExportListing */
+        ExportListing: {
+            /** Data Dir */
+            data_dir: string | null;
+            /** Problem */
+            problem: string | null;
+            /** Fixture Loaded */
+            fixture_loaded: boolean;
+            /** Files */
+            files: components["schemas"]["ExportFile"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -77,6 +294,67 @@ export interface components {
             status: "ok";
             /** Version */
             version: string;
+        };
+        /** ImportOutcome */
+        ImportOutcome: {
+            /**
+             * Batch Id
+             * Format: uuid
+             */
+            batch_id: string;
+            /** Filename */
+            filename: string;
+            /** Source Label */
+            source_label: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Rows */
+            rows: number;
+            /** Already Imported */
+            already_imported: boolean;
+            /** Accounts */
+            accounts: components["schemas"]["AccountImported"][];
+        };
+        /** ImportRequest */
+        ImportRequest: {
+            /** Filename */
+            filename: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+        };
+        /** NewAccount */
+        NewAccount: {
+            /** Label */
+            label: string;
+            /** Kind */
+            kind: string;
+            /** Opened On */
+            opened_on?: string | null;
+        };
+        /** NewBalance */
+        NewBalance: {
+            /** Account */
+            account: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Balance */
+            balance: string;
+        };
+        /** Refusal */
+        Refusal: {
+            /** Kind */
+            kind: string;
+            /** Message */
+            message: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -149,6 +427,313 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_files_api_imports_files_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportListing"];
+                };
+            };
+        };
+    };
+    list_imports_api_imports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Batch"][];
+                };
+            };
+        };
+    };
+    create_import_api_imports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportOutcome"];
+                };
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    delete_import_api_imports__batch_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    list_accounts_api_accounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountListing"];
+                };
+            };
+        };
+    };
+    create_account_api_accounts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewAccount"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    record_balance_api_balances_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewBalance"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    delete_balance_api_balances__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
                 };
             };
         };

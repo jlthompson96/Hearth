@@ -63,6 +63,9 @@ class ImportBatch(Base):
     #: Which normalizer read it, so a bug six months out is attributable.
     normalizer: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'raw'"))
+    #: The date the export describes. Stated at import, never inferred, and kept
+    #: here so re-normalizing the raw rows later needs nothing but this table.
+    as_of: Mapped[dt.date] = mapped_column(Date, nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
     imported_at: Mapped[timestamp]
 
@@ -168,7 +171,8 @@ class HoldingSnapshot(Base):
 
     `market_value` is stored rather than derived from quantity and price:
     exports report it, and recomputing it here would be arithmetic performed in
-    the wrong place. Price is nullable because not every export carries one.
+    the wrong place. Quantity and price are nullable because not every line
+    carries them — a cash line has a value and nothing else.
     """
 
     __tablename__ = "holding_snapshot"

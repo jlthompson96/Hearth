@@ -42,7 +42,7 @@ export function Money({ amount }: { amount: string }) {
  * $50.00") is a positive amount and stays uncoloured: colouring by meaning would
  * mean guessing at it, and a guess in red is worse than no colour.
  */
-const NEGATIVE_AMOUNT = /[-−]\$\d[\d,]*(?:\.\d+)?/g
+const NEGATIVE_AMOUNT = /[-\u2212]\$\d[\d,]*(?:\.\d+)?/g
 
 export function withNegativesInRed(text: string): ReactNode[] {
   const parts: ReactNode[] = []

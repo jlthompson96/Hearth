@@ -1,13 +1,22 @@
 /**
- * Phase 5: the Chat screen, the first of the Design canvas's seven.
+ * The shell: three of the Design canvas's seven screens, one per capability
+ * that exists behind it — Chat (Phase 5), and Data & imports and Manual entry
+ * (Phase 2). The rest land with their phases; a screen built before its backend
+ * is a mock with a router in front of it.
+ *
+ * The screen is in the URL hash, so a reload or a bookmark lands where you
+ * were. All three stay mounted and the inactive ones are hidden rather than
+ * unmounted: Chat holds its conversation in memory until Phase 8 stores it,
+ * and switching tabs should not throw it away.
  *
  * The backend probe from Phase 0 stays, reduced to a dot in the header. It is
- * the first thing you want to know when an answer does not arrive, and it costs
- * one request on mount.
+ * the first thing you want to know when an answer does not arrive.
  */
 import { useEffect, useState } from 'react'
 
 import { Chat } from './Chat'
+import { Imports } from './Imports'
+import { ManualEntry } from './ManualEntry'
 // Generated from the API's OpenAPI schema by `npm run gen:types`, and committed
 // so a fresh clone typechecks without a backend running. Never hand-edited.
 import type { components } from './api/schema'
@@ -19,8 +28,27 @@ type Probe =
   | { state: 'up'; health: Health }
   | { state: 'down'; detail: string }
 
+const SCREENS = [
+  { hash: '#/', name: 'Chat' },
+  { hash: '#/imports', name: 'Data & imports' },
+  { hash: '#/entry', name: 'Manual entry' },
+] as const
+
+type Screen = (typeof SCREENS)[number]['hash']
+
+function current(): Screen {
+  return SCREENS.find((s) => s.hash === window.location.hash)?.hash ?? '#/'
+}
+
 export function App() {
   const [probe, setProbe] = useState<Probe>({ state: 'checking' })
+  const [screen, setScreen] = useState<Screen>(current)
+
+  useEffect(() => {
+    const follow = () => setScreen(current())
+    window.addEventListener('hashchange', follow)
+    return () => window.removeEventListener('hashchange', follow)
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -53,7 +81,23 @@ export function App() {
         </p>
       </header>
 
-      <Chat />
+      <nav className="tabs" aria-label="Screens">
+        {SCREENS.map((s) => (
+          <a key={s.hash} href={s.hash} aria-current={s.hash === screen ? 'page' : undefined}>
+            {s.name}
+          </a>
+        ))}
+      </nav>
+
+      <div className="view" hidden={screen !== '#/'}>
+        <Chat />
+      </div>
+      <div className="view" hidden={screen !== '#/imports'}>
+        <Imports active={screen === '#/imports'} />
+      </div>
+      <div className="view" hidden={screen !== '#/entry'}>
+        <ManualEntry active={screen === '#/entry'} />
+      </div>
     </main>
   )
 }
