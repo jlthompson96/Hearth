@@ -158,7 +158,20 @@ Cases: routing, tool selection, grounded numbers (exact figure present), require
 refusals. Forty cases — 20 routing, 5 tool, 4 grounded, 4 caveat, 7 refusal.
 
 **Exit:** editing a prompt produces a measurable delta rather than a vibe. **Met, and
-demonstrated rather than assumed.** Baseline is 40/40 cases and 120/120 runs. A suite that
+demonstrated rather than assumed.** The first committed baseline is
+`evals/results/2098ede.json`: 40/40 cases, 120/120 runs, every case 3/3, on a clean tree.
+
+It is not the first 40/40 this phase reported, and the difference matters. That one was
+measured on a dirty tree and got lucky: a re-run against the same commit failed
+`caveat-no-data-is-not-no-change` 0/3, and the fault was the case, not the answer. It
+forbade the word "flat", which appears in the tool's own denial — "not a flat balance" —
+so a model that quoted the tool failed and one that paraphrased passed. The case now
+forbids claim-shaped phrases ("has not changed", "remained flat") and was checked in both
+directions: it still catches the answer that shipped in Phase 5, and passes the right one.
+A forbidden substring that occurs inside its own denial fails a correct answer
+intermittently, which is the worst way for a check to be wrong.
+
+A suite that
 passes everything on its first run proves nothing until it is shown to fail, so the caveat
 section was cut out of `prompts/tally.md` and the cases re-run: both caveat cases went
 3/3 to 0/3, and back to 3/3 when it was restored. That is the delta the phase asked for.
