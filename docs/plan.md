@@ -10,10 +10,11 @@ UI reference: the Design canvas — seven screens (Chat, Data & imports, Manual 
 audit, Model log, Connections, Settings). Both side panels collapse; in the real app that
 state is one localStorage key read on mount, not per-route.
 
-Five of those seven are scheduled: Chat (5, 6, 8), Data & imports and Manual entry (2),
-Egress audit (9), Connections (12). Model log and Settings are in the backlog with their
-reasons. There is no UI phase — each screen lands with the capability behind it, because a
-screen built before its backend is a mock with a router in front of it.
+Five of those seven were scheduled: Chat (5, 6, 8), Data & imports and Manual entry (2),
+Egress audit (9), Connections (12). Model log and Settings were built from the backlog on
+2026-09-21 — see "Built from the backlog". There is no UI phase — each screen lands with
+the capability behind it, because a screen built before its backend is a mock with a
+router in front of it.
 
 ---
 
@@ -378,15 +379,42 @@ tools blocked. Results fenced before entering context.
   feature most likely to make the thing get used daily.
 - Human-in-the-loop interrupts — only matters once a tool can write
 - CSV / chart export
-- Model log browser — the drawer from a chat message is the useful part; the standalone
-  browser duplicates what a tracing tool does better
-- Settings screen — in the Design canvas but never scheduled, and on inspection it has
-  nothing to hold. Configuration is `.env`, read at startup: model names, database URLs,
-  ports, the SearXNG endpoint. A screen that edits those either restarts the process or
-  lies about being in effect, and one user editing their own `.env` in a text editor is
-  not worse off. Revisit if something genuinely per-session appears — a retention window,
-  a default agent — rather than building the screen and then looking for its contents.
-- Langfuse — revisit only if pytest results files stop being enough
+
+## Built from the backlog (2026-09-21)
+
+**Model log.** Every model call and every tool run, stored verbatim in `model_log`, keyed
+to the question it answered and deleted with its thread — and after 90 days by default. An
+entry is made where the call is made (the agent loop, the router, the title call) and
+travels to the chat route as an event like everything else a turn produces; nothing is
+global, so the evals and probes, which store no turns, never write one. The request is the
+body langchain-openai itself builds, schemas included, not a reconstruction; the response
+is what LangChain received, with LM Studio's token counts — streamed replies too, once
+`stream_usage` was checked against LM Studio and switched on. The router and titles now
+ask for the raw reply beside the parsed one, so an unreadable reply is logged as it was
+rather than lost to an exception. What is missing is the reasoning text: LM Studio returns
+it as `reasoning_content`, which LangChain's OpenAI client drops. Its token count survives.
+
+The backlog said the drawer from a chat message is the useful part. Every answer links to
+its run; the standalone list is for runs nobody was watching. It earned its place on its
+first run, which showed an answer ending on a sentence copied from its own instructions
+(Phase 8's addendum), and Forge reporting "No lift called 'squat' has ever been logged" as
+"no sessions logged for that period" — an old misreading, recorded here, not yet fixed.
+
+**Settings.** Built on the condition the backlog set: something genuinely per-session
+appeared. Three preferences, in Postgres, read where they are used, so a change is in
+effect on the next question with no restart: the answer length a new question starts at,
+thread retention (30 days to 2 years, default 1 year) and model-log retention (7 days to a
+year, default 90 days). Each takes only listed values; none is a guardrail. The
+configuration is shown read-only beneath them, a lock on everything code enforces, and no
+password is ever sent. `.env` is still edited in a text editor: it is read once at
+startup, and a page that edited it would have to restart the server or show values that
+were not in effect.
+
+**Langfuse — blocked on Docker.** Self-hosted Langfuse needs Postgres, ClickHouse, Redis
+and S3; Docker's WSL2 engine fails on this machine and ClickHouse has no native Windows
+build. Langfuse Cloud is out regardless — it would carry every prompt, balances included,
+off the machine (rules 5 and 6). The Model log covers the trace view locally. Revisit with
+SearXNG if Docker is fixed, with Langfuse's own telemetry switched off.
 
 ## Cut deliberately
 
@@ -397,7 +425,7 @@ transaction-level ingestion (drags in merchant categorization).
 ## Open questions
 
 1. Fitness data: app export or manual? — unblocks Phase 11
-2. SearXNG without Docker — blocks Phase 9. See the Postgres answer below: that machine
+2. SearXNG without Docker — blocks Phase 9, and Langfuse with it. See the Postgres answer below: that machine
    has no working Docker, and SearXNG is a compose service. Either Docker gets fixed or
    SearXNG runs natively.
 3. pgvector on the host — blocks Phase 10 alongside nothing else now that the embedding

@@ -1,8 +1,9 @@
 """The FastAPI application.
 
 /health from Phase 0, the chat stream from Phase 5, the Data & imports and
-Manual entry screens' routes from Phase 2, and thread history from Phase 8. The
-egress audit arrives with Phase 9; see docs/plan.md.
+Manual entry screens' routes from Phase 2, thread history from Phase 8, and the
+Model log and Settings screens from the backlog. The egress audit arrives with
+Phase 9; see docs/plan.md.
 
 The frontend reaches this through Vite's dev proxy rather than across an
 origin, so there is no CORS middleware here and no browser preflight to
@@ -17,7 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from api import __version__, refusals
-from api.routes import accounts, chat, health, imports, threads
+from api.routes import accounts, chat, health, imports, model_log, settings, threads
 from db.writer import writer_connection
 from history import store
 
@@ -26,14 +27,14 @@ log = logging.getLogger("hearth")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Apply thread retention once at startup; starting a thread applies it
-    again. A database that is not up yet must not stop /health from answering,
+    """Apply thread and model-log retention once at startup; starting a thread
+    applies it again. A database that is not up yet must not stop /health from answering,
     so a failure here is logged and the next new thread tries again."""
     try:
         with writer_connection() as conn:
             removed = store.sweep(conn, now=dt.datetime.now(dt.UTC))
         if removed:
-            log.info("retention: removed %d thread(s) untouched for a year", removed)
+            log.info("retention: removed %d thread(s) past their retention", removed)
     except Exception as error:  # noqa: BLE001 - startup must not depend on Postgres
         log.warning("retention sweep skipped: %s", type(error).__name__)
     yield
@@ -53,3 +54,5 @@ app.include_router(chat.router)
 app.include_router(threads.router)
 app.include_router(imports.router)
 app.include_router(accounts.router)
+app.include_router(model_log.router)
+app.include_router(settings.router)

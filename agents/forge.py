@@ -47,5 +47,9 @@ def answer(
         return
 
     yield from run(
-        system=system_prompt(today, detail), question=question, tools=FORGE_TOOLS, history=earlier
+        caller="forge",
+        system=system_prompt(today, detail),
+        question=question,
+        tools=FORGE_TOOLS,
+        history=earlier,
     )

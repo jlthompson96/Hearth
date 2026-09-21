@@ -16,13 +16,15 @@ failure falls back to the question's first words. A title is never worth
 failing a turn over.
 """
 
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from agents.loop import load_prompt
-from llm import structured_model
+from llm import structured_reply
+from modellog import Clock, LogEntry, request_body, response_body, tokens
 
 MAX_WORDS = 6
 MAX_CHARS = 60
@@ -44,23 +46,52 @@ class _TitleModel(Protocol):
 
 
 def _model() -> _TitleModel:
-    return structured_model(_Title, max_tokens=MAX_TOKENS, reasoning_effort="none")
+    return structured_reply(_Title, max_tokens=MAX_TOKENS, reasoning_effort="none")
 
 
-def for_question(question: str, *, model: _TitleModel | None = None) -> str:
+def for_question(
+    question: str,
+    *,
+    model: _TitleModel | None = None,
+    log: Callable[[LogEntry], None] | None = None,
+) -> str:
+    """The title, or the question's first words if the call fails. `log`
+    receives the call's Model log entry, failed or not."""
     # The question is fenced, and cannot close its own fence.
     fenced = question.replace("<question>", "").replace("</question>", "")
+    messages = [
+        SystemMessage(load_prompt("title")),
+        HumanMessage(f"<question>\n{fenced}\n</question>"),
+    ]
+    chosen = model or _model()
+    clock = Clock()
+    reply: dict[str, Any] = {}
+    error: str | None = None
     try:
-        answer = (model or _model()).invoke(
-            [
-                SystemMessage(load_prompt("title")),
-                HumanMessage(f"<question>\n{fenced}\n</question>"),
-            ]
+        reply = chosen.invoke(messages)
+        if reply.get("parsed") is None:
+            error = f"unreadable reply: {reply.get('parsing_error')}"
+    except Exception as failure:  # noqa: BLE001 - any failure means the fallback, never a failed turn
+        error = f"{type(failure).__name__}: {failure}"
+    if log is not None:
+        body = request_body(chosen, messages)
+        spent_in, spent_out = tokens(reply.get("raw"))
+        log(
+            LogEntry(
+                kind="title",
+                caller="titles",
+                request=body,
+                response=response_body(reply.get("raw")),
+                started_at=clock.started_at,
+                duration_ms=clock.ms,
+                model=body.get("model"),
+                error=error,
+                input_tokens=spent_in,
+                output_tokens=spent_out,
+            )
         )
-        raw = str(answer.title)
-    except Exception:  # noqa: BLE001 - any failure means the fallback, never a failed turn
-        raw = ""
-    return clean(raw) or fallback(question)
+    parsed = reply.get("parsed")
+    return clean(str(parsed.title) if parsed is not None else "") or fallback(question)
 
 
 def fallback(question: str) -> str:

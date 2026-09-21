@@ -31,7 +31,7 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> TestClient:
     monkeypatch.setattr(chat_route, "writer_connection", _same)
     monkeypatch.setattr(threads_route, "writer_connection", _same)
     monkeypatch.setattr(threads_route, "readonly_connection", _same)
-    monkeypatch.setattr(titles, "for_question", lambda question: "Back squat progress")
+    monkeypatch.setattr(titles, "for_question", lambda question, **_: "Back squat progress")
 
     def _answer(
         agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()

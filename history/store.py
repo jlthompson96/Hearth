@@ -6,9 +6,12 @@ stemming is the point: the word you remember typing is "squat", the one you
 typed was "squats". Embeddings would find what is *similar*; you are looking for
 a thread you wrote, where exact terms win, and full-text costs no VRAM.
 
-Retention is a year from a thread's last message, pinned threads exempt. It is
+Retention is a year from a thread's last message by default, pinned threads
+exempt; the Settings screen can change the period (`preferences`). It is
 enforced by `sweep`, which runs when the API starts and whenever a thread is
-started, so it holds even if the backend runs for a year without a restart.
+started, so it holds even if the backend runs for a year without a restart. The
+same sweep expires model-log entries older than their own, usually shorter,
+retention — pinning keeps a conversation, not the record of every call behind it.
 """
 
 import datetime as dt
@@ -18,11 +21,14 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 
-from db.models import Message, Thread
+import preferences
+from db.models import Message, ModelLog, Thread
 from ingest.errors import NotFound
 
 #: The decision, made on 2026-09-21: a year after the last message, unless
-#: pinned. "Forever by default" was ruled out in the plan.
+#: pinned. "Forever by default" was ruled out in the plan. This is the
+#: default; the period in effect is a preference, and tests/test_preferences.py
+#: holds the two together.
 RETENTION = dt.timedelta(days=365)
 
 #: Marks around each match in a search snippet. Control characters, so no text
@@ -148,11 +154,16 @@ def delete_thread(conn: sa.Connection, thread_id: uuid.UUID) -> None:
 
 
 def sweep(conn: sa.Connection, *, now: dt.datetime) -> int:
-    """Delete every unpinned thread whose last message is older than
-    `RETENTION`. Messages go with it (ON DELETE CASCADE)."""
+    """Delete every unpinned thread whose last message is older than the thread
+    retention in effect — its messages and model log go with it (ON DELETE
+    CASCADE) — and every model-log entry older than the model log's own.
+    Returns the number of threads removed."""
+    kept = preferences.days(conn, "thread_retention_days")
     removed = conn.execute(
-        sa.delete(Thread).where(Thread.pinned_at.is_(None), Thread.updated_at < now - RETENTION)
+        sa.delete(Thread).where(Thread.pinned_at.is_(None), Thread.updated_at < now - kept)
     )
+    logged = preferences.days(conn, "model_log_retention_days")
+    conn.execute(sa.delete(ModelLog).where(ModelLog.started_at < now - logged))
     return removed.rowcount
 
 

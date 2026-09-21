@@ -2,12 +2,14 @@
 
 No model here: the constrained-JSON call is replaced with one that fails the
 way the real one was seen to — an empty reply the structured-output parser
-rejects with a ValueError — so what is tested is what the router does about it.
+rejects with a ValueError, which comes back beside the raw reply as
+`parsing_error` — so what is tested is what the router does about it.
 """
 
 from typing import Any
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from steward import router as router_module
 from steward.router import ATTEMPTS, ConstrainedJSONRouter, Decision, Destination, RoutingError
@@ -18,17 +20,23 @@ EMPTY = ValueError(
 
 
 class _Model:
+    """`llm.structured_reply`'s shape: the raw reply beside the parsed one. A
+    parse failure is returned, as the real one is; anything else is raised."""
+
     def __init__(self, *replies: Any) -> None:
         self.replies = list(replies)
         self.calls = 0
 
-    def invoke(self, messages: object) -> Decision:
+    def invoke(self, messages: object) -> dict[str, Any]:
         self.calls += 1
         reply = self.replies.pop(0)
+        if isinstance(reply, ValueError):
+            return {"raw": AIMessage(content=""), "parsed": None, "parsing_error": reply}
         if isinstance(reply, Exception):
             raise reply
         assert isinstance(reply, Decision)
-        return reply
+        raw = AIMessage(content=reply.model_dump_json())
+        return {"raw": raw, "parsed": reply, "parsing_error": None}
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, model: _Model) -> dict[str, Any]:
@@ -38,7 +46,7 @@ def _patch(monkeypatch: pytest.MonkeyPatch, model: _Model) -> dict[str, Any]:
         seen.update(kwargs)
         return model
 
-    monkeypatch.setattr(router_module, "structured_model", _structured)
+    monkeypatch.setattr(router_module, "structured_reply", _structured)
     return seen
 
 
@@ -88,3 +96,30 @@ def test_the_router_asks_for_no_reasoning(monkeypatch: pytest.MonkeyPatch) -> No
     ConstrainedJSONRouter().route("how much do I bench")
 
     assert seen["reasoning_effort"] == "none"
+
+
+def test_every_attempt_is_logged_the_failed_one_with_why(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Model log is where "why did that turn fail" is answered, so the
+    unreadable attempt is kept, verbatim, beside the one that worked."""
+    _patch(monkeypatch, _Model(EMPTY, _decision(Destination.tally)))
+
+    routed = ConstrainedJSONRouter().route("what are my current positions")
+
+    failed, worked = routed.log
+    assert failed.kind == worked.kind == "route" and failed.caller == "steward"
+    assert failed.error is not None and "unreadable" in failed.error
+    assert worked.error is None
+    assert worked.response is not None and '"tally"' in worked.response["content"]
+    assert worked.request["messages"][-1]["content"] == "what are my current positions"
+
+
+def test_a_routing_failure_carries_its_log(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch(monkeypatch, _Model(*([EMPTY] * ATTEMPTS)))
+
+    with pytest.raises(RoutingError) as failure:
+        ConstrainedJSONRouter().route("anything")
+
+    assert len(failure.value.log) == ATTEMPTS
+    assert all(entry.error for entry in failure.value.log)

@@ -35,7 +35,7 @@ def test_upgrade_created_everything(engine: Engine) -> None:
         tables = _public_tables(connection)
         views = _public_views(connection)
 
-    assert len(tables) == 11, tables
+    assert len(tables) == 13, tables
     assert views == ["snapshot_coverage"]
 
 

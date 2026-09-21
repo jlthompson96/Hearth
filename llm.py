@@ -13,7 +13,7 @@ happens to contain some.
 """
 
 import os
-from typing import cast
+from typing import Any, cast
 
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.runnables import Runnable
@@ -87,6 +87,10 @@ def chat_model(
         max_tokens=max_tokens,
         timeout=timeout,
         reasoning_effort=effort,
+        # Token counts on streamed replies too, for the Model log. LM Studio
+        # honours `stream_options.include_usage`, reasoning tokens included —
+        # checked on the host before this was switched on.
+        stream_usage=True,
         # One retry. A local model that failed twice is not going to succeed on
         # the third attempt, and the turn should fail visibly instead.
         max_retries=1,
@@ -111,4 +115,23 @@ def structured_model[SchemaT: BaseModel](
     return cast(
         Runnable[LanguageModelInput, SchemaT],
         model.with_structured_output(schema, method="json_schema", strict=strict),
+    )
+
+
+def structured_reply(
+    schema: type[BaseModel], **kwargs: object
+) -> Runnable[LanguageModelInput, dict[str, Any]]:
+    """A model constrained to `schema` that returns the raw reply beside the
+    parsed one: `{"raw": AIMessage, "parsed": schema | None, "parsing_error":
+    Exception | None}`.
+
+    For the callers the Model log records. A reply that does not parse — the
+    empty reply the router was seen to get — comes back as `parsing_error`
+    with the message that caused it, rather than as an exception that has
+    already thrown the message away.
+    """
+    model = chat_model(**kwargs)  # type: ignore[arg-type]
+    return cast(
+        Runnable[LanguageModelInput, dict[str, Any]],
+        model.with_structured_output(schema, method="json_schema", include_raw=True),
     )

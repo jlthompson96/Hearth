@@ -30,6 +30,7 @@ tool chatter into the reply.
 
 import datetime as dt
 import json
+import logging
 import uuid
 from collections.abc import Iterator, Sequence
 from decimal import Decimal
@@ -46,6 +47,7 @@ from agents.loop import (
     Detail,
     DoneEvent,
     Event,
+    LogEvent,
     RefusedEvent,
     RoutedEvent,
     TokenEvent,
@@ -53,11 +55,13 @@ from agents.loop import (
     ToolResultEvent,
 )
 from db.writer import writer_connection
-from history import store, titles
+from history import model_log, store, titles
 from ingest.errors import NotFound
+from modellog import LogEntry
 from steward import graph as steward
 
 router = APIRouter(prefix="/api", tags=["chat"])
+logger = logging.getLogger("hearth")
 
 
 class Agent(StrEnum):
@@ -170,6 +174,8 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
     confidence: Decimal | None = None
     refusal: str | None = None
     results: list[str] = []
+    #: Every model call and tool run, for the Model log. Kept on failure too.
+    log: list[LogEntry] = []
     try:
         for item in _events(request.agent, request.message, today, request.detail, history):
             match item:
@@ -203,12 +209,15 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
                     yield _sse("refused", {"signal": signal, "message": text})
                 case DoneEvent(reason=reason):
                     yield _sse("done", {"reason": reason})
+                case LogEvent(entry=entry):
+                    log.append(entry)
     except Exception as error:  # noqa: BLE001 - the stream is the only channel back
         # A traceback cannot reach the client through an open SSE stream, and a
         # silently truncated one looks to the UI exactly like a finished answer.
         # Nothing is stored for the answer: the question stays, unanswered,
-        # which is what happened.
+        # which is what happened. The log of how it failed is kept.
         yield _sse("error", {"detail": f"{type(error).__name__}: {error}"})
+        _keep(thread_id, question_id, log)
         return
 
     content = refusal or "".join(answer)
@@ -242,12 +251,28 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
             # A refused turn is never sent to the model to be titled: the
             # pre-flight check exists so the specialist is not asked about it,
             # and a title call would ask anyway.
-            title = titles.REFUSED if refusal else titles.for_question(request.message)
+            title = (
+                titles.REFUSED if refusal else titles.for_question(request.message, log=log.append)
+            )
             with writer_connection() as conn:
                 store.set_title(conn, thread_id, title)
             yield _sse("title", {"id": str(thread_id), "title": title})
     except Exception as error:  # noqa: BLE001 - the answer was delivered; say what was not kept
         yield _sse("error", {"detail": f"the answer was not saved: {type(error).__name__}"})
+    _keep(thread_id, question_id, log)
+
+
+def _keep(thread_id: uuid.UUID, question_id: uuid.UUID, log: list[LogEntry]) -> None:
+    """Store a turn's Model log. A log that cannot be written is lost, not a
+    failed turn: the answer has already been delivered, and the log is how one
+    is explained, never a reason to withhold it."""
+    if not log:
+        return
+    try:
+        with writer_connection() as conn:
+            model_log.add(conn, thread_id, question_id, log)
+    except Exception as error:  # noqa: BLE001 - see above
+        logger.warning("model log not stored: %s", type(error).__name__)
 
 
 @router.post("/chat", summary="Ask a specialist a question; streams the answer as SSE")

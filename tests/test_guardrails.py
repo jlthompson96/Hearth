@@ -55,8 +55,8 @@ def no_model(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError("a model was constructed for a question the check should refuse")
 
     monkeypatch.setattr("agents.loop.chat_model", _reached)
-    monkeypatch.setattr("steward.router.structured_model", _reached)
-    monkeypatch.setattr("history.titles.structured_model", _reached)
+    monkeypatch.setattr("steward.router.structured_reply", _reached)
+    monkeypatch.setattr("history.titles.structured_reply", _reached)
 
 
 @pytest.mark.parametrize("question", TRIPPING)
@@ -184,7 +184,7 @@ def test_the_agent_loop_stops_a_model_that_never_stops_calling_tools(
 
     monkeypatch.setattr(loop, "chat_model", lambda: _Relentless())
 
-    events = list(loop.run(system="s", question="q", tools=[probe]))
+    events = list(loop.run(caller="probe", system="s", question="q", tools=[probe]))
 
     assert _Relentless.streamed == loop.MAX_STEPS
     assert sum(isinstance(e, ToolEvent) for e in events) == loop.MAX_STEPS

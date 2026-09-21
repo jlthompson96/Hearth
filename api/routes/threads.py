@@ -12,6 +12,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 
+import preferences
 from api.refusals import REFUSALS
 from db.session import readonly_connection
 from db.writer import writer_connection
@@ -78,8 +79,9 @@ def list_threads(
 ) -> ThreadListing:
     with readonly_connection() as conn:
         found = store.list_threads(conn, query=q)
+        kept = preferences.days(conn, "thread_retention_days")
     return ThreadListing(
-        retention_days=store.RETENTION.days,
+        retention_days=kept.days,
         threads=[
             ThreadSummary(
                 id=t.id,

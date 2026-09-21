@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from 'react'
 import { streamChat, type ChatEvent } from './api/chat'
 import { reason } from './api/http'
 import { threads, type StoredMessage } from './api/threads'
+import { settings } from './api/settings'
 import { renderAnswer } from './answer'
 import { ThreadPanel } from './Threads'
 
@@ -106,10 +107,13 @@ function Attribution({
   to,
   confidence,
   detail,
+  run,
 }: {
   to: string
   confidence?: number
   detail?: Detail
+  /** The question's id: its run in the Model log, once the turn is over. */
+  run?: string
 }) {
   const unsure = confidence !== undefined && confidence < 0.6
   return (
@@ -119,8 +123,25 @@ function Attribution({
       {detail && detail !== 'normal' && (
         <span className="level">{detail === 'brief' ? 'less detail' : 'more detail'}</span>
       )}
+      {run && (
+        <a className="log-link" href={`#/log?run=${run}`} title="Everything the model was sent and said">
+          log
+        </a>
+      )}
     </p>
   )
+}
+
+/** New questions start at the length chosen in Settings, read when asked so a
+ *  change there is in effect on the next question. Normal if it can't be read. */
+async function defaultDetail(): Promise<Detail> {
+  try {
+    const chosen = (await settings.read()).preferences.find((p) => p.key === 'default_detail')
+    const value = String(chosen?.value ?? 'normal')
+    return LEVELS.some((l) => l.detail === value) ? (value as Detail) : 'normal'
+  } catch {
+    return 'normal'
+  }
 }
 
 /** The open thread lives in the URL hash, so a reload lands back in it. */
@@ -216,7 +237,7 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
     if (!question || busy) return
     setDraft('')
     // No agent named: the Steward decides.
-    await ask(question, 'normal')
+    await ask(question, await defaultDetail())
   }
 
   /** The same question again at another level, of the specialist that answered
@@ -295,6 +316,7 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
                   to={turn.routedTo}
                   confidence={turn.confidence}
                   detail={turn.detail}
+                  run={turn.streaming ? undefined : turn.id}
                 />
               )}
               {turn.tools.map((call, j) => (

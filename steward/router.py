@@ -23,14 +23,15 @@ against the labelled set rather than assuming either way.
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 from openai import ContentFilterFinishReasonError, LengthFinishReasonError
 from pydantic import BaseModel, Field
 
 from agents.conversation import Exchange, last_line
 from agents.loop import load_prompt
-from llm import structured_model
+from llm import structured_reply
+from modellog import Clock, LogEntry, request_body, response_body, tokens
 
 
 class Destination(StrEnum):
@@ -93,6 +94,9 @@ class Routed:
     destination: Destination
     confidence: float
     router: str
+    #: Every call it took, for the Model log: one, or two when the first reply
+    #: was unreadable.
+    log: tuple[LogEntry, ...] = ()
 
 
 class Router(Protocol):
@@ -139,7 +143,12 @@ def message(question: str, previous: Exchange | None) -> str:
 
 class RoutingError(RuntimeError):
     """The router's reply was unreadable on every attempt. The turn ends with a
-    plain message rather than a traceback, and no specialist runs."""
+    plain message rather than a traceback, and no specialist runs. The failed
+    calls are carried for the Model log, which is where "why" gets answered."""
+
+    def __init__(self, message: str, log: tuple[LogEntry, ...] = ()) -> None:
+        super().__init__(message)
+        self.log = log
 
 
 #: Off, measured on the host on 2026-09-21 against nvidia/nemotron-3-nano-4b.
@@ -157,10 +166,12 @@ REASONING_EFFORT = "none"
 #: it did not.
 ATTEMPTS = 2
 
-#: What an unreadable reply looks like on the way back: the structured-output
-#: parser's ValueError (pydantic's ValidationError is one too), or the model
-#: stopping on length or a content filter. A connection error is not here: it
-#: is not the reply's fault, and the caller should see it as what it is.
+#: What an unreadable reply looks like on the way back. A reply that does not
+#: parse — empty, or not the schema — comes back as `parsing_error` beside the
+#: raw message; these are the ones raised instead: the model stopping on length
+#: or a content filter, or a ValueError from the client. A connection error is
+#: not here: it is not the reply's fault, and the caller should see it as what
+#: it is.
 _UNREADABLE = (ValueError, LengthFinishReasonError, ContentFilterFinishReasonError)
 
 
@@ -173,22 +184,46 @@ class ConstrainedJSONRouter:
         self._temperature = temperature
 
     def route(self, question: str, previous: Exchange | None = None) -> Routed:
-        model = structured_model(
+        model = structured_reply(
             Decision, temperature=self._temperature, reasoning_effort=REASONING_EFFORT
         )
         asked = [("system", system_prompt()), ("human", message(question, previous))]
+        body = request_body(model, asked)
+        log: list[LogEntry] = []
         failure: Exception | None = None
         for _ in range(ATTEMPTS):
+            clock = Clock()
+            reply: dict[str, Any] = {}
             try:
-                decision = model.invoke(asked)
+                reply = model.invoke(asked)
+                failure = reply.get("parsing_error")
             except _UNREADABLE as error:
                 failure = error
+            decision = reply.get("parsed")
+            spent_in, spent_out = tokens(reply.get("raw"))
+            log.append(
+                LogEntry(
+                    kind="route",
+                    caller="steward",
+                    request=body,
+                    response=response_body(reply.get("raw")),
+                    started_at=clock.started_at,
+                    duration_ms=clock.ms,
+                    model=body.get("model"),
+                    error=None if decision is not None else f"unreadable reply: {failure}",
+                    input_tokens=spent_in,
+                    output_tokens=spent_out,
+                )
+            )
+            if decision is None:
                 continue
             return Routed(
                 destination=decision.destination,
                 confidence=decision.confidence,
                 router=self.name,
+                log=tuple(log),
             )
         raise RoutingError(
-            f"the router's reply was unreadable {ATTEMPTS} times ({type(failure).__name__})"
+            f"the router's reply was unreadable {ATTEMPTS} times ({type(failure).__name__})",
+            log=tuple(log),
         ) from failure

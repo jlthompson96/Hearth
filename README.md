@@ -27,12 +27,14 @@ flowchart LR
     chatUI["Chat + thread panel"]
     importsUI["Data & imports"]
     entryUI["Manual entry"]
+    logUI["Model log + Settings"]
   end
 
   subgraph api["FastAPI — localhost:8000"]
     chatRoute["/api/chat — SSE"]
     threadsRoute["/api/threads"]
     dataRoutes["/api/imports<br/>/api/accounts"]
+    logRoutes["/api/model-log<br/>/api/settings"]
   end
 
   subgraph answering["Answering a turn"]
@@ -45,7 +47,7 @@ flowchart LR
   end
 
   subgraph writing["Writing"]
-    history["history<br/>threads, search, titles<br/>one-year retention"]
+    history["history<br/>threads, search, titles<br/>model log, retention"]
     ingest["ingest<br/>Fidelity normalizer<br/>manual entry"]
   end
 
@@ -66,6 +68,7 @@ flowchart LR
   chatUI --> threadsRoute
   importsUI --> dataRoutes
   entryUI --> dataRoutes
+  logUI --> logRoutes --> history
 
   chatRoute --> preflight --> steward
   steward --> tally
@@ -157,6 +160,8 @@ text is not in this table, because it is not implemented.
 | **5. Nothing leaves the machine** | Every configured address — model, database, search — must be loopback, private or LAN, or startup fails (`config.local_only`). The one planned exception, Errand's search, arrives with its own egress filter in Phase 9 | `tests/test_config.py` |
 | **6. No telemetry** | The model connection refuses to build while any tracing variable is on | `tests/test_llm_connection.py` |
 | **7. Iteration caps** | The Steward's hop cap is a conditional edge (6); the specialist loop stops at 4 model calls | `tests/test_steward.py`, `tests/test_guardrails.py` |
+| **The Model log stays on this machine** | Every prompt and reply — balances included — is kept in Postgres, keyed to its question and deleted with its thread, and after 90 days by default. No export, no tracing service: Langfuse is not wired (it would need Docker here, and its cloud is ruled out by rules 5 and 6) | `tests/test_model_log.py`, `tests/test_preferences.py` |
+| **No setting loosens a guardrail** | `preferences.py`: three preferences, each a fixed list of values — answer length and two retention periods. The hop cap, step cap, follow-up window, pre-flight check and read-only role are shown on the Settings screen locked, and `.env` is never written from a page | `tests/test_preferences.py` |
 | **Real data stays out of the repo** | `HEARTH_DATA_DIR` inside the repository is refused; the evals run on their own fixture database, so no real figure reaches a committed result file | `tests/test_datadir.py`, `evals/conftest.py` |
 
 Rules 8–11 govern MCP, which arrives in Phase 12; no MCP code exists yet.
@@ -188,8 +193,9 @@ Open, in the order they matter:
 2. **SearXNG without Docker** (Phase 9) and **pgvector on Windows** (Phase 10).
 
 Cut deliberately: voice, a third agent, proactive alerts, multi-model routing and
-transaction-level ingestion — each for a reason the plan records. Backlog, unscheduled:
-a morning digest, CSV and chart export, and a model-log browser.
+transaction-level ingestion — each for a reason the plan records. Built from the backlog:
+the **Model log** and **Settings** screens. Langfuse is blocked on Docker, like SearXNG.
+Backlog, unscheduled: a morning digest, and CSV and chart export.
 
 ## Prerequisites
 
@@ -375,6 +381,27 @@ is the feature. Sixteen of the filter's tests exist to prove ordinary training q
 get through, because a filter that refuses a lifter asking about their squat has not been
 made safer — it has been made useless, and a useless filter gets switched off.
 
+## The Model log and Settings
+
+**Model log** (`#/log`, and a "log" link beside every answer) keeps every exchange with
+the model, verbatim: the routing call, each of the specialist's model calls and tool runs,
+and the title call, in order, as a timeline. Each entry opens to the request LM Studio was
+sent — the body langchain-openai builds, tools and schema included — and what came back,
+with LM Studio's token counts and a breakdown of what the prompt was made of. It is for
+answering "why did it say that", and its first run did: it showed an answer ending on a
+sentence copied from its own instructions. One thing it cannot show is the model's
+reasoning text — LM Studio returns it in a field LangChain drops — so it shows the
+reasoning's token count and says so. Entries are kept 90 days by default and go with
+their thread.
+
+**Settings** (`#/settings`) has three preferences, saved as you change them and in effect
+on the next question: the answer length a new question starts at, how long threads are
+kept, and how long the model log is kept. Below them is the running configuration —
+model, endpoint, caps, the follow-up window, the read-only role — read-only, with a lock
+on everything code enforces. `.env` is not edited from the page: it is read once at
+startup, and a page that edited it would have to restart the server or show values that
+were not in effect.
+
 ## Running the model
 
 The host is a Windows machine running LM Studio as a Windows application. There is no WSL
@@ -478,7 +505,9 @@ steward/      The orchestrator. Routes each turn to a specialist.      (Phase 6)
 agents/       Tally (finance, Phase 5) and Forge (fitness, Phase 11).
 tools/        finance.py and fitness.py — every figure an agent reports.
 ingest/       CSV import and manual entry: the only writes of financial data. (Phase 2)
-history/      Stored conversations: search, titles, one-year retention.  (Phase 8)
+history/      Stored conversations: search, titles, retention, the model log. (Phase 8)
+modellog.py   What a Model log entry holds, and the request as it is sent.
+preferences.py What the Settings screen can change; read where used, no restart.
               Errand, the one thing that leaves the house, lands in Phase 9.
 prompts/      Agent prompts as version-controlled Markdown, never inline literals.
 db/           Schema and shared column types. NUMERIC throughout.
@@ -551,4 +580,5 @@ which then queries the public web. Every such query passes `validate_search_quer
 logged to the `search_audit` table, with a view in the UI (Phase 9).
 
 There is no third-party telemetry anywhere — no analytics, no error reporting,
-`LANGCHAIN_TRACING_V2=false`.
+`LANGCHAIN_TRACING_V2=false`. The Model log is the local answer to a tracing service: it
+keeps every prompt and reply in Postgres on this machine, with no export.

@@ -81,7 +81,7 @@ def seen(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(chat_route, "store", _Store())
     monkeypatch.setattr(chat_route, "writer_connection", lambda: nullcontext(None))
     monkeypatch.setattr(chat_route, "_events", _events)
-    monkeypatch.setattr(titles, "for_question", lambda q: "t")
+    monkeypatch.setattr(titles, "for_question", lambda q, **_: "t")
     return captured
 
 

@@ -38,7 +38,15 @@ from langgraph.graph import END, START, StateGraph
 
 from agents import forge, preflight, tally
 from agents.conversation import Exchange, previous
-from agents.loop import Detail, DoneEvent, Event, RefusedEvent, RoutedEvent, TokenEvent
+from agents.loop import (
+    Detail,
+    DoneEvent,
+    Event,
+    LogEvent,
+    RefusedEvent,
+    RoutedEvent,
+    TokenEvent,
+)
 from steward.router import ConstrainedJSONRouter, Destination, Router, RoutingError
 
 #: Phase 6: an adversarial delegation-loop prompt must terminate within 6 hops.
@@ -107,9 +115,13 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
         try:
             decision = chosen.route(state["question"], previous(state.get("history", ())))
         except RoutingError as failure:
+            for entry in failure.log:
+                _emit(LogEvent(entry))
             _emit(TokenEvent(UNROUTED))
             _emit(DoneEvent(f"routing failed: {failure}"))
             return {"destination": None, "hops": state.get("hops", 0) + 1}
+        for entry in decision.log:
+            _emit(LogEvent(entry))
         _emit(
             RoutedEvent(
                 destination=decision.destination.value,

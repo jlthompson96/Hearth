@@ -1,11 +1,13 @@
 /**
- * The shell: three of the Design canvas's seven screens, one per capability
- * that exists behind it — Chat (Phase 5), and Data & imports and Manual entry
- * (Phase 2). The rest land with their phases; a screen built before its backend
- * is a mock with a router in front of it.
+ * The shell: five of the Design canvas's seven screens, one per capability
+ * that exists behind it — Chat (Phase 5), Data & imports and Manual entry
+ * (Phase 2), and the Model log and Settings. Egress audit and Connections land
+ * with their phases; a screen built before its backend is a mock with a router
+ * in front of it.
  *
  * The screen is in the URL hash, so a reload or a bookmark lands where you
- * were. All three stay mounted and the inactive ones are hidden rather than
+ * were; a screen may carry its own state after a `?` (the open thread, the open
+ * run). Every screen stays mounted and the inactive ones are hidden rather than
  * unmounted, so switching tabs mid-answer does not cut the stream off.
  *
  * Side panels collapse, and whether each is open is one localStorage key read
@@ -20,6 +22,8 @@ import { useEffect, useState } from 'react'
 import { Chat } from './Chat'
 import { Imports } from './Imports'
 import { ManualEntry } from './ManualEntry'
+import { ModelLog } from './ModelLog'
+import { Settings } from './Settings'
 // Generated from the API's OpenAPI schema by `npm run gen:types`, and committed
 // so a fresh clone typechecks without a backend running. Never hand-edited.
 import type { components } from './api/schema'
@@ -35,6 +39,8 @@ const SCREENS = [
   { hash: '#/', name: 'Chat' },
   { hash: '#/imports', name: 'Data & imports' },
   { hash: '#/entry', name: 'Manual entry' },
+  { hash: '#/log', name: 'Model log' },
+  { hash: '#/settings', name: 'Settings' },
 ] as const
 
 type Screen = (typeof SCREENS)[number]['hash']
@@ -54,7 +60,8 @@ function readPanels(): Panels {
 }
 
 function current(): Screen {
-  return SCREENS.find((s) => s.hash === window.location.hash)?.hash ?? '#/'
+  const path = window.location.hash.split('?')[0]
+  return SCREENS.find((s) => s.hash === path)?.hash ?? '#/'
 }
 
 export function App() {
@@ -126,6 +133,12 @@ export function App() {
       </div>
       <div className="view" hidden={screen !== '#/entry'}>
         <ManualEntry active={screen === '#/entry'} />
+      </div>
+      <div className="view" hidden={screen !== '#/log'}>
+        <ModelLog active={screen === '#/log'} />
+      </div>
+      <div className="view" hidden={screen !== '#/settings'}>
+        <Settings active={screen === '#/settings'} />
       </div>
     </main>
   )

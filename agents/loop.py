@@ -30,6 +30,7 @@ from langchain_core.tools import BaseTool
 
 from agents.conversation import Exchange
 from llm import chat_model
+from modellog import Clock, LogEntry, request_body, response_body, tokens
 
 PROMPTS = Path(__file__).resolve().parents[1] / "prompts"
 
@@ -90,7 +91,16 @@ class DoneEvent:
     reason: str = "complete"
 
 
-Event = TokenEvent | ToolEvent | ToolResultEvent | RefusedEvent | RoutedEvent | DoneEvent
+@dataclass(frozen=True)
+class LogEvent:
+    """One entry for the Model log: a model call or a tool run, verbatim. Not
+    streamed to the browser — the chat route stores it with the turn, and the
+    Model log screen reads it back."""
+
+    entry: LogEntry
+
+
+Event = TokenEvent | ToolEvent | ToolResultEvent | RefusedEvent | RoutedEvent | DoneEvent | LogEvent
 
 
 @lru_cache
@@ -116,6 +126,7 @@ def detail_prompt(detail: Detail) -> str:
 
 def run(
     *,
+    caller: str,
     system: str,
     question: str,
     tools: list[BaseTool],
@@ -127,6 +138,10 @@ def run(
     by `conversation.window`. They go in as the questions and answers they were
     — not their tool results, which are the bulk of a turn and which the model
     is told to fetch again rather than remember.
+
+    Every model call and tool run is also yielded as a `LogEvent`, named for
+    `caller`, including a model call that failed — the failed one is the entry
+    most worth reading.
     """
     model = chat_model().bind_tools(tools)
     by_name = {t.name: t for t in tools}
@@ -139,13 +154,22 @@ def run(
     for _step in range(MAX_STEPS):
         gathered: AIMessageChunk | None = None
         emitted: list[str] = []
+        body = request_body(model, conversation, stream=True)
+        clock = Clock()
 
-        for chunk in model.stream(conversation):
-            assert isinstance(chunk, AIMessageChunk)
-            gathered = chunk if gathered is None else gathered + chunk
-            if chunk.text:
-                emitted.append(chunk.text)
-                yield TokenEvent(chunk.text)
+        try:
+            for chunk in model.stream(conversation):
+                assert isinstance(chunk, AIMessageChunk)
+                gathered = chunk if gathered is None else gathered + chunk
+                if chunk.text:
+                    emitted.append(chunk.text)
+                    yield TokenEvent(chunk.text)
+        except Exception as error:
+            yield LogEvent(
+                _step_entry(caller, body, clock, gathered, f"{type(error).__name__}: {error}")
+            )
+            raise
+        yield LogEvent(_step_entry(caller, body, clock, gathered))
 
         if gathered is None:
             yield DoneEvent("the model returned nothing")
@@ -168,17 +192,31 @@ def run(
             yield ToolEvent(name, args)
 
             tool = by_name.get(name)
+            clock = Clock()
+            failed: str | None = None
             if tool is None:
                 # Only the bound tools can be called. A name that is not one of
                 # them is the model inventing a capability, and it is told so
                 # rather than the turn dying on a KeyError.
                 result = f"No tool named {name!r}. Available: {', '.join(sorted(by_name))}."
+                failed = "no such tool"
             else:
                 try:
                     result = str(tool.invoke(args))
                 except Exception as error:  # noqa: BLE001 - surfaced to the model, not swallowed
-                    result = f"{type(error).__name__}: {error}"
+                    result = failed = f"{type(error).__name__}: {error}"
 
+            yield LogEvent(
+                LogEntry(
+                    kind="tool",
+                    caller=caller,
+                    request={"name": name, "args": args},
+                    response={"result": result},
+                    started_at=clock.started_at,
+                    duration_ms=clock.ms,
+                    error=failed,
+                )
+            )
             yield ToolResultEvent(name, result)
             conversation.append(
                 ToolMessage(content=result, tool_call_id=call.get("id") or name, name=name)
@@ -187,3 +225,25 @@ def run(
     # Falling out of the loop is the cap doing its job. The conditional is the
     # guardrail; this message is only how it explains itself.
     yield DoneEvent(f"stopped after {MAX_STEPS} steps without a final answer")
+
+
+def _step_entry(
+    caller: str,
+    body: dict[str, Any],
+    clock: Clock,
+    reply: AIMessageChunk | None,
+    error: str | None = None,
+) -> LogEntry:
+    spent_in, spent_out = tokens(reply)
+    return LogEntry(
+        kind="step",
+        caller=caller,
+        request=body,
+        response=response_body(reply),
+        started_at=clock.started_at,
+        duration_ms=clock.ms,
+        model=body.get("model"),
+        error=error,
+        input_tokens=spent_in,
+        output_tokens=spent_out,
+    )

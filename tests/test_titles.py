@@ -13,12 +13,14 @@ from history import titles
 
 
 class _Returns:
+    """The raw reply beside the parsed one, as `llm.structured_reply` gives it."""
+
     def __init__(self, title: str) -> None:
         self.title = title
 
-    def invoke(self, messages: Any) -> "_Returns":
+    def invoke(self, messages: Any) -> dict[str, Any]:
         self.seen = messages
-        return self
+        return {"raw": None, "parsed": self, "parsing_error": None}
 
 
 class _Fails:

@@ -178,6 +178,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/model-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Runs, most recent first */
+        get: operations["list_runs_api_model_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/model-log/{question_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One run: every model call and tool run, verbatim */
+        get: operations["read_run_api_model_log__question_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preferences and the running configuration */
+        get: operations["read_settings_api_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a preference; in effect on the next question */
+        put: operations["write_preference_api_settings__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -279,6 +347,24 @@ export interface components {
             /** Rerun Of */
             rerun_of?: string | null;
         };
+        /** ConfigItem */
+        ConfigItem: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+            /** Locked */
+            locked: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /** ConfigSection */
+        ConfigSection: {
+            /** Title */
+            title: string;
+            /** Items */
+            items: components["schemas"]["ConfigItem"][];
+        };
         /** Entry */
         Entry: {
             /** Id */
@@ -292,6 +378,43 @@ export interface components {
             as_of: string;
             /** Balance */
             balance: string;
+        };
+        /** EntryOut */
+        EntryOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Seq */
+            seq: number;
+            /** Kind */
+            kind: string;
+            /** Caller */
+            caller: string;
+            /** Model */
+            model: string | null;
+            /** Request */
+            request: {
+                [key: string]: unknown;
+            };
+            /** Response */
+            response: {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error: string | null;
+            /** Input Tokens */
+            input_tokens: number | null;
+            /** Output Tokens */
+            output_tokens: number | null;
+            /** Duration Ms */
+            duration_ms: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
         };
         /** ExportFile */
         ExportFile: {
@@ -395,6 +518,26 @@ export interface components {
             /** Balance */
             balance: string;
         };
+        /** PreferenceIn */
+        PreferenceIn: {
+            /** Value */
+            value: number | string;
+        };
+        /** PreferenceOut */
+        PreferenceOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Help */
+            help: string;
+            /** Value */
+            value: number | string;
+            /** Default */
+            default: number | string;
+            /** Allowed */
+            allowed: (number | string)[];
+        };
         /** Refusal */
         Refusal: {
             /** Kind */
@@ -402,12 +545,79 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** RunDetailOut */
+        RunDetailOut: {
+            summary: components["schemas"]["RunSummaryOut"];
+            /** Answer */
+            answer: string | null;
+            /** Answered By */
+            answered_by: string | null;
+            /** Entries */
+            entries: components["schemas"]["EntryOut"][];
+        };
+        /** RunListing */
+        RunListing: {
+            /** Retention Days */
+            retention_days: number;
+            /** Runs */
+            runs: components["schemas"]["RunSummaryOut"][];
+        };
+        /** RunSummaryOut */
+        RunSummaryOut: {
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /**
+             * Thread Id
+             * Format: uuid
+             */
+            thread_id: string;
+            /** Thread Title */
+            thread_title: string | null;
+            /** Question */
+            question: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Input Tokens */
+            input_tokens: number | null;
+            /** Output Tokens */
+            output_tokens: number | null;
+            /** Failed */
+            failed: boolean;
+            /** Chain */
+            chain: components["schemas"]["StepOut"][];
+        };
+        /** SettingsOut */
+        SettingsOut: {
+            /** Preferences */
+            preferences: components["schemas"]["PreferenceOut"][];
+            /** Configuration */
+            configuration: components["schemas"]["ConfigSection"][];
+        };
         /** SnippetPart */
         SnippetPart: {
             /** Text */
             text: string;
             /** Match */
             match: boolean;
+        };
+        /** StepOut */
+        StepOut: {
+            /** Kind */
+            kind: string;
+            /** Caller */
+            caller: string;
+            /** Tool */
+            tool: string | null;
+            /** Failed */
+            failed: boolean;
         };
         /** StoredMessage */
         StoredMessage: {
@@ -1045,6 +1255,141 @@ export interface operations {
             };
             /** @description Refused: conflicts with what is recorded */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    list_runs_api_model_log_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Older than this start time */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunListing"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_run_api_model_log__question_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetailOut"];
+                };
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_settings_api_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsOut"];
+                };
+            };
+        };
+    };
+    write_preference_api_settings__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferenceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nothing by that id */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

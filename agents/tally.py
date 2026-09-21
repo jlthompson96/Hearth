@@ -48,5 +48,9 @@ def answer(
         return
 
     yield from run(
-        system=system_prompt(today, detail), question=question, tools=TALLY_TOOLS, history=earlier
+        caller="tally",
+        system=system_prompt(today, detail),
+        question=question,
+        tools=TALLY_TOOLS,
+        history=earlier,
     )

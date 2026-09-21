@@ -338,9 +338,9 @@ class Message(Base):
     agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    #: The tools an answer called, name and arguments — what the UI shows under
-    #: it, so a figure's source survives a reload. Results are not kept: the
-    #: answer already carries what they said.
+    #: The tools an answer called: name, arguments and result. The UI shows the
+    #: first two under the answer, so a figure's source survives a reload; the
+    #: result is what a follow-up's repeated figure is checked against.
     tool_calls: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB, nullable=True)
     #: Stopped by the pre-flight check rather than answered. Shown differently,
     #: and its thread is never titled by the model.
@@ -366,6 +366,73 @@ class Message(Base):
             postgresql_using="gin",
         ),
     )
+
+
+class ModelLog(Base):
+    """Every exchange with the model, and every tool run between them, stored
+    verbatim — the Model log screen, for answering "why did it say that".
+
+    One turn is a run: every entry carries the question it answered, and runs
+    are read by that id. Entries go with their thread (ON DELETE CASCADE), so
+    thread retention holds here too, and a shorter model-log retention can
+    sweep them sooner. Requests hold what the model was sent — earlier turns,
+    tool results, real figures — which is why they live here, on this machine,
+    and nowhere else.
+    """
+
+    __tablename__ = "model_log"
+
+    id: Mapped[uuid_pk]
+    thread_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("thread.id", ondelete="CASCADE"), nullable=False
+    )
+    #: The question this entry was part of answering — the run's id.
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("message.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Order within the run.
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: route, step (a specialist's model call), tool, or title.
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    #: steward, tally, forge or titles.
+    caller: Mapped[str] = mapped_column(Text, nullable=False)
+    #: The model named in the request; null for a tool, which is Python.
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The request as sent to LM Studio, or a tool's arguments.
+    request: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    #: What came back, or a tool's result. Null when the call failed.
+    response: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: As LM Studio counted them; null when it did not say.
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[dt.datetime] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("kind in ('route', 'step', 'tool', 'title')", name="kind_known"),
+        CheckConstraint("duration_ms >= 0", name="duration_not_negative"),
+        Index("ix_model_log_question_id_seq", "question_id", "seq"),
+        Index("ix_model_log_started_at", "started_at"),
+    )
+
+
+class Preference(Base):
+    """A preference that takes effect on the next question, changed from the
+    Settings screen.
+
+    Deliberately not configuration: `.env` is read once at startup, and a screen
+    that edited it would have to restart the server or show values that are not
+    in effect. What lives here is read where it is used, every time, so a change
+    is true the moment it is saved. `preferences.py` owns the keys, their
+    defaults and what values each may take.
+    """
+
+    __tablename__ = "preference"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[object] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[timestamp]
 
 
 # --- egress -------------------------------------------------------------------

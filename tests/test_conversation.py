@@ -251,11 +251,12 @@ def test_the_router_sends_the_reply_with_its_context(monkeypatch: pytest.MonkeyP
     sent: list[Any] = []
 
     class _Structured:
-        def invoke(self, messages: list[Any]) -> Decision:
+        def invoke(self, messages: list[Any]) -> dict[str, Any]:
             sent.extend(messages)
-            return Decision(destination=Destination.tally, confidence=0.9)
+            decision = Decision(destination=Destination.tally, confidence=0.9)
+            return {"raw": None, "parsed": decision, "parsing_error": None}
 
-    monkeypatch.setattr(router_module, "structured_model", lambda *a, **k: _Structured())
+    monkeypatch.setattr(router_module, "structured_reply", lambda *a, **k: _Structured())
 
     ConstrainedJSONRouter().route("yes", NET_WORTH)
 

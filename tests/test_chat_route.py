@@ -55,7 +55,7 @@ def memory(monkeypatch: pytest.MonkeyPatch) -> _MemoryStore:
     store = _MemoryStore()
     monkeypatch.setattr(chat_route, "store", store)
     monkeypatch.setattr(chat_route, "writer_connection", lambda: nullcontext(None))
-    monkeypatch.setattr(titles, "for_question", lambda question: "A title")
+    monkeypatch.setattr(titles, "for_question", lambda question, **_: "A title")
     return store
 
 
@@ -382,7 +382,7 @@ def test_a_refused_turn_is_titled_without_the_model(
     """The pre-flight check exists so the specialist is not asked about this.
     A title call would ask anyway, so a refused turn gets a fixed title."""
 
-    def _no_model(question: str) -> str:
+    def _no_model(question: str, **_: object) -> str:
         raise AssertionError("a refused turn was sent to the model to be titled")
 
     monkeypatch.setattr(titles, "for_question", _no_model)
