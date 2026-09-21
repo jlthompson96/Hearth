@@ -91,7 +91,9 @@ def test_every_event_kind_reaches_the_client_named(
         "_events",
         _script(
             ToolEvent("net_worth_trend", {"start": "2024-01-01", "end": "2024-09-20"}),
-            ToolResultEvent("net_worth_trend", "caveat: a date is missing"),
+            ToolResultEvent(
+                "net_worth_trend", "change over the period: +$38,250.00; caveat: a date is missing"
+            ),
             TokenEvent("Net worth rose "),
             TokenEvent("$38,250.00."),
             DoneEvent(),
@@ -401,3 +403,44 @@ def test_a_second_turn_continues_the_thread_and_is_not_retitled(
     assert thread["created"] is True
     names = [n for n, _ in _events(second.text)]
     assert names[0] == "thread" and "title" not in names
+
+
+def test_a_figure_no_tool_returned_is_flagged_and_stored(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore
+) -> None:
+    """Rule 1 on a real answer. The tool said $38,250.00; the answer rounded it."""
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(
+            ToolEvent("net_worth_trend", {}),
+            ToolResultEvent("net_worth_trend", "change over the period: +$38,250.00"),
+            TokenEvent("Net worth rose about $38,000."),
+            DoneEvent(),
+        ),
+    )
+
+    response = client.post("/api/chat", json={"message": "how has my net worth moved"})
+
+    flagged = next(json.loads(d) for n, d in _events(response.text) if n == "ungrounded")
+    assert flagged == {"figures": ["$38,000"]}
+    assert memory.messages[1]["ungrounded"] == ["$38,000"]
+
+
+def test_a_grounded_answer_raises_no_flag(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore
+) -> None:
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(
+            ToolResultEvent("net_worth_trend", "change over the period: +$38,250.00"),
+            TokenEvent("Net worth rose $38,250.00."),
+            DoneEvent(),
+        ),
+    )
+
+    response = client.post("/api/chat", json={"message": "how has my net worth moved"})
+
+    assert "event: ungrounded" not in response.text
+    assert memory.messages[1]["ungrounded"] is None

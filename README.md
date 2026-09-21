@@ -139,6 +139,26 @@ The model never does arithmetic and never sees raw records: step 11 hands it fig
 Python function already computed and rounded, and the evals assert that exact figure
 appears in the answer.
 
+## Guardrails
+
+CLAUDE.md's rules are enforced in code, not asked for in prompts (rule 7). Each row names
+where a rule is enforced and the test that proves it. A rule that exists only as prompt
+text is not in this table, because it is not implemented.
+
+| Rule | Enforced by | Proven by |
+|---|---|---|
+| **Nothing harmful reaches a model** — self-harm, hate speech, disordered eating | `agents/preflight.py`, run before the Steward's router and again in each specialist. A refused question is never sent to any model, including the one that writes titles. Self-harm gets a reply pointing to 988; hate speech is declined in one line | `tests/test_preflight.py` (113 cases in both directions, including money and gym idioms that must pass), `tests/test_guardrails.py` (every entry point refuses with every model constructor rigged to fail) |
+| **1. The model never does arithmetic** | Tools compute every figure; `agents/grounding.py` checks every dollar amount and weight in every answer against the numbers its tools returned, and flags any that no tool produced — shown under the answer and stored with it | `tests/test_grounding.py`, `tests/test_chat_route.py`; the evals fail a grounded or caveat case on any ungrounded figure |
+| **2. The model never writes SQL** | Fixed parameterized query functions, run through a read-only Postgres role | `tests/test_readonly_role.py` — the role provably cannot write |
+| **3. No live financial connections** | Data enters by CSV from `HEARTH_DATA_DIR` or by hand. The API takes a file name, never a path or an upload; the folder must be outside the repo | `tests/test_datadir.py`, `tests/test_data_routes.py` |
+| **4. No account numbers** | No column for one. Imports refuse an account-number column, and any account name, filename or label with four digits in a row, before anything is stored. Errors mask digits | `tests/test_schema.py`, `tests/test_fidelity.py`, `tests/test_manual_entry.py` |
+| **5. Nothing leaves the machine** | Every configured address — model, database, search — must be loopback, private or LAN, or startup fails (`config.local_only`). The one planned exception, Errand's search, arrives with its own egress filter in Phase 9 | `tests/test_config.py` |
+| **6. No telemetry** | The model connection refuses to build while any tracing variable is on | `tests/test_llm_connection.py` |
+| **7. Iteration caps** | The Steward's hop cap is a conditional edge (6); the specialist loop stops at 4 model calls | `tests/test_steward.py`, `tests/test_guardrails.py` |
+| **Real data stays out of the repo** | `HEARTH_DATA_DIR` inside the repository is refused; the evals run on their own fixture database, so no real figure reaches a committed result file | `tests/test_datadir.py`, `evals/conftest.py` |
+
+Rules 8–11 govern MCP, which arrives in Phase 12; no MCP code exists yet.
+
 ## Roadmap
 
 Effort was sized in evenings; the full reasoning for each phase, including what each
@@ -153,23 +173,19 @@ measurement found, is in [docs/plan.md](docs/plan.md).
 | 4 | Model connection | Done | Constrained JSON schema-valid 10/10 → **30/30** |
 | 5 | Tally, end to end | Done | Net worth exact to the cent with the coverage gap stated → **3/3** |
 | 6 | Steward and routing | Done | Routing ≥ 90% → **60/60**; a delegation loop stops at 6 hops |
-| 7 | Eval harness | Done | A prompt edit moves a number → caveat cases 3/3 → 0/3 → 3/3; baseline **40/40, 120/120** |
+| 7 | Eval harness | Done | A prompt edit moves a number → caveat cases 3/3 → 0/3 → 3/3; 44 cases |
 | 8 | Thread history | Done | Last week's thread found by a word you remember → found by "squat" and by "squatting" |
 | 9 | Errand and egress (web search) | **Blocked** — SearXNG needs Docker or a native install | A prompt engineered to leak a balance into a search raises `EgressViolation` |
 | 10 | RAG over documents | **Blocked** — pgvector needs an MSVC build | Retrieval traceable per answer; context stays within budget |
-| 11 | Forge (training) | Done over the fixture; real fitness data source open | Refusal path tested → 32 pre-flight tests |
+| 11 | Forge (training) | Done over the fixture; real fitness data source open | Refusal path tested → pre-flight check now runs before routing, on every question |
 | 12 | MCP connections | Not started | Tool-schema cost visible and under a ceiling; no remote server |
 
 Open, in the order they matter:
 
 1. **The first real import** (Phase 2). Only the export's header has been seen; the rows
    under it are the real test.
-2. **Where the pre-flight check runs.** It guards Forge, and the UI reaches Forge through
-   the Steward — which can route a disordered-eating question elsewhere, past the check.
-   Moving it ahead of routing needs its patterns narrowed first, or it refuses finance
-   questions that say "purge".
-3. **Fitness data source** — an app export, or manual entry (Phase 11 runs on the fixture).
-4. **SearXNG without Docker** (Phase 9) and **pgvector on Windows** (Phase 10).
+2. **Fitness data source** — an app export, or manual entry (Phase 11 runs on the fixture).
+3. **SearXNG without Docker** (Phase 9) and **pgvector on Windows** (Phase 10).
 
 Cut deliberately: voice, a third agent, proactive alerts, multi-model routing and
 transaction-level ingestion — each for a reason the plan records. Backlog, unscheduled:

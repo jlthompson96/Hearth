@@ -420,6 +420,8 @@ export interface components {
             refused: boolean;
             /** Confidence */
             confidence: string | null;
+            /** Ungrounded */
+            ungrounded: string[] | null;
             /**
              * Created At
              * Format: date-time

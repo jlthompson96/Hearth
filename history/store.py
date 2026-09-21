@@ -56,6 +56,7 @@ class StoredMessage:
     tool_calls: list[dict[str, object]] | None
     refused: bool
     confidence: Decimal | None
+    ungrounded: list[str] | None
     created_at: dt.datetime
 
 
@@ -92,6 +93,7 @@ def add_message(
     tool_calls: list[dict[str, object]] | None = None,
     refused: bool = False,
     confidence: Decimal | None = None,
+    ungrounded: list[str] | None = None,
 ) -> uuid.UUID:
     # clock_timestamp, not now(): now() is the transaction's start, and two
     # messages written in one transaction would tie and read back in any order.
@@ -106,6 +108,7 @@ def add_message(
             tool_calls=tool_calls,
             refused=refused,
             confidence=confidence,
+            ungrounded=ungrounded,
             created_at=stamp,
         )
         .returning(Message.id)
@@ -210,6 +213,7 @@ def get_thread(conn: sa.Connection, thread_id: uuid.UUID) -> ThreadDetail:
             Message.tool_calls,
             Message.refused,
             Message.confidence,
+            Message.ungrounded,
             Message.created_at,
         )
         .where(Message.thread_id == thread_id)

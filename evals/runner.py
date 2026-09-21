@@ -20,7 +20,8 @@ from typing import Any
 import yaml
 
 from agents import forge, preflight, tally
-from agents.loop import Event, RefusedEvent, TokenEvent, ToolEvent
+from agents.grounding import ungrounded
+from agents.loop import Event, RefusedEvent, TokenEvent, ToolEvent, ToolResultEvent
 from scripts.seed import YEAR
 from steward import graph as steward
 
@@ -102,10 +103,11 @@ def _answer(case: Case, today: dt.date) -> Iterator[Event]:
     return SPECIALISTS[case.agent](case.question, today=today)
 
 
-def _text_and_tools(case: Case, today: dt.date) -> tuple[str, list[str], str | None]:
+def _text_and_tools(case: Case, today: dt.date) -> tuple[str, list[str], str | None, list[str]]:
     text: list[str] = []
     tools: list[str] = []
     signal: str | None = None
+    results: list[str] = []
 
     for event in _answer(case, today):
         match event:
@@ -115,9 +117,11 @@ def _text_and_tools(case: Case, today: dt.date) -> tuple[str, list[str], str | N
                 tools.append(name)
             case RefusedEvent(signal=fired):
                 signal = fired
+            case ToolResultEvent(result=result):
+                results.append(result)
             case _:
                 pass
-    return "".join(text), tools, signal
+    return "".join(text), tools, signal, results
 
 
 def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
@@ -135,7 +139,7 @@ def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
         fired = refusal.signal if refusal else None
         return fired == case.expect_signal, f"signal {fired!r}, wanted {case.expect_signal!r}"
 
-    text, tools, _ = _text_and_tools(case, today)
+    text, tools, _, results = _text_and_tools(case, today)
 
     if case.kind == "tool":
         ok = case.expect_tool in tools
@@ -153,6 +157,12 @@ def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
     forbidden = [s for s in case.must_not_contain if s in text.lower()]
     if forbidden:
         return False, f"said {forbidden} — that is no-data reported as no-change: {text[:160]!r}"
+
+    # Rule 1: the right figure being present is not enough if a wrong one is
+    # present beside it. The same check the chat runs on every real answer.
+    flags = ungrounded(text, [*results, case.question])
+    if flags:
+        return False, f"figures no tool returned: {flags} in: {text[:160]!r}"
 
     return True, ""
 

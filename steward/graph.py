@@ -36,8 +36,8 @@ from typing import Any, TypedDict
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
-from agents import forge, tally
-from agents.loop import DoneEvent, Event, RoutedEvent, TokenEvent
+from agents import forge, preflight, tally
+from agents.loop import DoneEvent, Event, RefusedEvent, RoutedEvent, TokenEvent
 from steward.router import ConstrainedJSONRouter, Destination, Router
 
 #: Phase 6: an adversarial delegation-loop prompt must terminate within 6 hops.
@@ -166,6 +166,16 @@ def answer(question: str, *, today: dt.date, graph: Any | None = None) -> Iterat
     day changes what "this year" means, and that is a caller's assumption to
     state rather than the code's to invent.
     """
+    # The pre-flight check runs here, before the router, because every turn
+    # from the UI enters here and the router is a model call too. It used to
+    # run only inside Forge, and the router sent "how do I make myself sick
+    # after dinner" to `unsupported`, where the check never saw it. Now nothing
+    # that trips it reaches any model — not the router, not a specialist.
+    refusal = preflight.check(question)
+    if refusal is not None:
+        yield RefusedEvent(refusal.signal, refusal.message)
+        return
+
     compiled = graph or build()
     state: StewardState = {"question": question, "today": today, "hops": 0}
 

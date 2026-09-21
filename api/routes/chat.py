@@ -38,6 +38,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents import forge, tally
+from agents.grounding import ungrounded
 from agents.loop import (
     DoneEvent,
     Event,
@@ -109,6 +110,7 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
     agent = request.agent.value if request.agent else None
     confidence: Decimal | None = None
     refusal: str | None = None
+    results: list[str] = []
     try:
         for item in _events(request.agent, request.message, today):
             match item:
@@ -120,6 +122,7 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
                     tools.append({"name": name, "args": args})
                     yield _sse("tool", {"name": name, "args": args})
                 case ToolResultEvent(name=name, result=result):
+                    results.append(result)
                     yield _sse("tool_result", {"name": name, "result": result})
                 case RoutedEvent(destination=destination, confidence=sure, router=name):
                     agent, confidence = destination, Decimal(str(sure)).quantize(Decimal("0.001"))
@@ -147,6 +150,11 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
         return
 
     content = refusal or "".join(answer)
+    # Rule 1 on the real answer: a figure no tool returned, and the question
+    # did not contain, was made by the model. Flagged, since it has streamed.
+    flags = [] if refusal else ungrounded(content, [*results, request.message])
+    if flags:
+        yield _sse("ungrounded", {"figures": flags})
     try:
         with writer_connection() as conn:
             if content:
@@ -159,6 +167,7 @@ def _stream(request: ChatRequest, today: dt.date) -> Iterator[str]:
                     tool_calls=tools or None,
                     refused=refusal is not None,
                     confidence=confidence,
+                    ungrounded=flags or None,
                 )
             untitled = store.needs_title(conn, thread_id)
         if untitled:

@@ -19,7 +19,7 @@ a model and runs in about three seconds.
 | `tool` | a named specialist picks the right tool | yes, a full turn |
 | `grounded` | the tool's exact figure appears verbatim | yes, a full turn |
 | `caveat` | a required sentence is present | yes, a full turn |
-| `refusal` | the pre-flight check fires with the right signal | **no** |
+| `refusal` | the pre-flight check fires with the right signal — or, for must-pass cases, does not | **no** |
 
 `tool` cases name the agent, which bypasses routing. Without that, a routing
 failure and a tool-selection failure are indistinguishable from outside.
@@ -34,6 +34,10 @@ The only local model available is the same one being graded, so judging would be
 circular. Every case is a string comparison. Seed a known state and assert the
 exact figure appears: "roughly $38,000" in place of "$38,250.00" is a rounding
 failure and a fail.
+
+A grounded or caveat case also fails on any figure the answer states that no tool
+returned (`agents/grounding.py`, the same check the chat runs on every real answer): the
+right figure being present is not enough if a computed one sits beside it.
 
 `must_not_contain` exists for the failure that is worse than a wrong number —
 `caveat-no-data-is-not-no-change` asserts the answer does *not* say "unchanged"

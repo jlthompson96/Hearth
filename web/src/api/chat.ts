@@ -25,6 +25,8 @@ export type ChatEvent =
   // and, after a new thread's first answer, the title it was given.
   | { type: 'thread'; id: string; created: boolean }
   | { type: 'title'; id: string; title: string }
+  // Rule 1 on the real answer: figures it stated that no tool returned.
+  | { type: 'ungrounded'; figures: string[] }
 
 /** One SSE frame: `event: <name>` and `data: <json>`. */
 function parseFrame(frame: string): ChatEvent | null {
@@ -78,6 +80,11 @@ function parseFrame(frame: string): ChatEvent | null {
         return { type: 'thread', id: String(payload.id ?? ''), created: Boolean(payload.created) }
       case 'title':
         return { type: 'title', id: String(payload.id ?? ''), title: String(payload.title ?? '') }
+      case 'ungrounded':
+        return {
+          type: 'ungrounded',
+          figures: Array.isArray(payload.figures) ? payload.figures.map(String) : [],
+        }
       default:
         return null
     }

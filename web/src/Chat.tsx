@@ -33,6 +33,8 @@ type Turn = {
   tools: ToolCall[]
   answer: string
   refusal?: string
+  /** Figures the answer stated that no tool returned (rule 1, checked live). */
+  ungrounded?: string[]
   error?: string
   /** Read back from storage with no answer: the turn failed when it ran. */
   unanswered?: boolean
@@ -87,6 +89,7 @@ function toTurns(messages: StoredMessage[]): Turn[] {
     turn.tools = (message.tool_calls ?? []).map((c) => ({ name: c.name, args: c.args }))
     if (message.refused) turn.refusal = message.content
     else turn.answer = message.content
+    turn.ungrounded = message.ungrounded ?? undefined
   }
   return turns
 }
@@ -205,6 +208,13 @@ export function Chat({ panelOpen, onTogglePanel }: { panelOpen: boolean; onToggl
                 <ToolLine key={j} call={call} />
               ))}
               {turn.answer && <p className="answer">{withNegativesInRed(turn.answer)}</p>}
+              {turn.ungrounded && turn.ungrounded.length > 0 && (
+                <p className="ungrounded">
+                  Not found in any tool result: {turn.ungrounded.join(', ')}. Treat{' '}
+                  {turn.ungrounded.length === 1 ? 'it' : 'them'} as unverified — every figure
+                  should come from a tool.
+                </p>
+              )}
               {turn.refusal && <p className="refusal">{turn.refusal}</p>}
               {turn.streaming && !turn.answer && !turn.refusal && <p className="muted">…</p>}
               {turn.unanswered && <p className="muted small">No answer was stored for this question.</p>}
@@ -253,6 +263,9 @@ function applyEvent(event: ChatEvent, update: (change: (turn: Turn) => Turn) => 
     case 'tool_result':
       // Deliberately not rendered. The result is already reflected in the
       // answer, and showing both invites reading the raw figures instead.
+      break
+    case 'ungrounded':
+      update((t) => ({ ...t, ungrounded: event.figures }))
       break
     case 'refused':
       // Styled apart from an answer and apart from an error. It is neither: the

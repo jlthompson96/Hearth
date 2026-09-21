@@ -1,8 +1,9 @@
 """Forge — the fitness specialist.
 
-The same shape as Tally, with one thing in front of it: `preflight.check` runs
-on the question before any model call, and a question that trips it never
-reaches inference.
+The same shape as Tally: `preflight.check` runs on the question before any
+model call, and a question that trips it never reaches inference. The check was
+written for Forge; since Phase 8 the Steward runs it before routing as well, so
+this is the second line for callers that name Forge directly.
 
 That ordering is the whole design. The refusal is not something the model is
 asked to produce and might not — it is a `return` before the model exists in

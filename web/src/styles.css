@@ -670,3 +670,15 @@ code {
     padding-right: 0;
   }
 }
+
+/* A figure in an answer that no tool returned (rule 1). A warning, not an
+   error: the answer stands, one number in it does not. */
+.ungrounded {
+  margin: 0.625rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 2px solid var(--negative);
+  background: var(--raised);
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}

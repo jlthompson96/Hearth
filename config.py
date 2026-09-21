@@ -9,13 +9,54 @@ No field that names a model carries a default. Model names change; a default
 here would be a hardcoded model name by another route (CLAUDE.md, Stack).
 """
 
+import ipaddress
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_ENV = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+# hide_input_in_errors: a rejected DATABASE_URL would otherwise be printed in
+# full by the validation error — password included.
+_ENV = SettingsConfigDict(
+    env_file=".env", env_file_encoding="utf-8", extra="ignore", hide_input_in_errors=True
+)
+
+#: Names that only resolve on a local network.
+_LAN_SUFFIXES = (".local", ".lan", ".internal", ".home.arpa", ".localdomain")
+
+
+def local_only(url: str) -> str:
+    """Rule 5, in code: every address Hearth is configured to call must be this
+    machine or the LAN — loopback, a private or link-local address, `localhost`,
+    a bare LAN hostname, or a LAN-only suffix. Anything else fails at startup,
+    before a single request is made.
+
+    Until this existed the rule was a comment beside the setting, which is the
+    kind of guardrail rule 7 says is not one. The error names the host and
+    never the URL: a database URL carries a password.
+    """
+    host = (urlsplit(url).hostname or "").lower()
+    if not host:
+        raise ValueError("the URL has no host")
+    if host == "localhost" or host.endswith(_LAN_SUFFIXES):
+        return url
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        if "." not in host:  # a bare LAN name, e.g. "gpu-box"
+            return url
+        raise ValueError(
+            f"it points at {host!r}, which is neither this machine nor the LAN. Hearth "
+            "makes no outbound calls beyond those (CLAUDE.md, rule 5)."
+        ) from None
+    if address.is_loopback or address.is_private or address.is_link_local:
+        return url
+    raise ValueError(
+        f"it points at {host}, a public address. Hearth makes no outbound calls "
+        "beyond this machine and the LAN (CLAUDE.md, rule 5)."
+    )
 
 
 class Settings(BaseSettings):
@@ -34,6 +75,11 @@ class Settings(BaseSettings):
     # Real CSVs live outside the repo. Unset until Phase 2 needs it.
     hearth_data_dir: Path | None = None
 
+    @field_validator("database_url", "database_url_ro", "searxng_url")
+    @classmethod
+    def _local(cls, url: str) -> str:
+        return local_only(url)
+
 
 class ModelSettings(BaseSettings):
     """Inference configuration. Arrives in use at Phase 4."""
@@ -48,6 +94,11 @@ class ModelSettings(BaseSettings):
     # No defaults. Set these to the ids LM Studio reports.
     chat_model: str = Field(min_length=1)
     embedding_model: str = Field(min_length=1)
+
+    @field_validator("lm_studio_base_url")
+    @classmethod
+    def _local(cls, url: str) -> str:
+        return local_only(url)
 
 
 @lru_cache

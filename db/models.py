@@ -347,6 +347,9 @@ class Message(Base):
     refused: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     #: How sure the router was. NUMERIC, like every figure in this schema.
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    #: Figures the answer states that no tool returned (agents.grounding) —
+    #: rule 1, checked on every real answer rather than only in the evals.
+    ungrounded: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[timestamp]
 
     thread: Mapped[Thread] = relationship(back_populates="messages")

@@ -233,7 +233,8 @@ lives inside Forge and never saw it: the Steward declined generically, and the t
 titled by the model. Phase 11's end-to-end test named `agent=forge` directly, and so never
 took the path the UI takes. Moving the check ahead of routing is the obvious fix and not a
 safe one as the filter stands — it refuses "should I purge my old credit card accounts" as
-purging, and reads "cut 500 calories a day" as a 500-calorie intake. See open questions.
+purging, and reads "cut 500 calories a day" as a 500-calorie intake. Resolved the same
+day, patterns first — see the answered questions below.
 
 ## Phase 9 — Errand and egress (2)
 
@@ -322,12 +323,16 @@ transaction-level ingestion (drags in merchant categorization).
    model is chosen. It needs an MSVC build on Windows. Nothing earlier touches a vector
    column, so it can wait, but Phase 10 must install it and assert it rather than
    inheriting the test harness's warning.
-4. Where the pre-flight check runs (Phase 8 finding). It guards Forge only, and the UI
-   reaches Forge through the Steward — which sent a purging question to `unsupported`,
-   past the check. Running it ahead of routing needs the patterns narrowed first, or it
-   refuses finance questions that say "purge". Two options: narrow the patterns and run
-   the check on every turn, or run it on every destination except Tally. Either needs its
-   must-pass list extended with finance questions before it ships.
+
+**Answered (2026-09-21):** where the pre-flight check runs — before routing, on every
+question, and again in each specialist. The patterns were tightened first, so it no longer
+refuses "purge my old accounts", "stop eating out", "rose fast for 3 days", "a 500 calorie
+deficit" or "throwing up after leg day", and it now catches "fast for 2 weeks" and "a 900
+calorie diet", which it had missed. Its scope grew on the owner's instruction: **self-harm
+and hate speech are refused too**, each with its own reply. `tests/test_guardrails.py`
+proves every entry point refuses with every model constructor rigged to fail, and was
+shown to fail with the Steward's check removed. See the README's Guardrails table for
+where every rule is enforced.
 
 **Answered:** the CSV header — Fidelity's positions export, `Portfolio_Positions_<Mon>-<DD>-<YYYY>.csv`:
 `Account name, Symbol, Description, Quantity, Last price, Last price change, Current value,
