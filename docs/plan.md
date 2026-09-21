@@ -256,10 +256,56 @@ there, three lines below; the July line itself looked like any other. The tool n
 partial total on its own line, and five answers in five then called July incomplete and
 none called it a drop. An eval case holds it.
 
-**A thread is a record, not context.** The model still answers each question on its own;
-earlier turns are not sent to it. Sending them is a decision about the 8,192-token window
-and about how the Steward routes a follow-up, and it is not this phase's. The chat says so
-under the composer rather than letting a follow-up look understood.
+**A thread was a record, not context** — until the addendum below. Each question was
+answered on its own, and the chat said so under the composer rather than letting a
+follow-up look understood.
+
+**Addendum, 2026-09-21: follow-ups.** The three-lengths change made this urgent: answers
+now end by offering something, and "yes" reached the router alone and was declined. A
+turn in an existing thread now carries its last few exchanges, and what each model is
+shown is decided in code (`agents/conversation.py`), because each part of it is a
+guardrail:
+
+- **The budget was measured before it was set.** A turn alone peaks near 3,300 of the
+  8,192 tokens — 1,500 of prompt and tool schemas before the question, then the tool
+  result, the answer and up to 1,400 tokens of reasoning — and answers heavy with figures
+  run about 2.3 characters to a token. So a specialist is shown at most 3 earlier
+  exchanges and 4,000 characters (about 1,750 tokens), whole or not at all.
+- **Each specialist sees only its own answers.** Forge has no reason to read a balance.
+  Earlier tool results are stored with their calls but never sent back; the model is told
+  to fetch every figure again.
+- **The router sees the previous question and its answer's last line** — the offer. Probed
+  over eleven follow-ups, five runs each: every reply and every change of subject routed
+  right, 5/5. Advice was the failure: "should I sell some of it?" after a positions answer
+  went to Tally 5/5. A prompt rule fixed that one; "should I add more weight next week?"
+  after a squat answer still goes to Forge 5/5, though alone it is declined 5/5. An
+  explicit advice field in the router's schema fixed it and broke three of Phase 6's
+  labelled cases — the mixed ones, "my gym membership went up — what has my net worth
+  done?" — which would have taken the set to 85%, under its exit bar. So it was not kept,
+  and Forge declines coaching in one line instead: 3/3. The routing miss stays in the case
+  file as a known failure, so it stays measured.
+- **The pre-flight check reads what the model reads.** A request can arrive in halves —
+  "help me lose 10kg", then "in 2 weeks" — each of which passes alone, so the check runs
+  over the questions a model is about to see, joined. Joining made false positives of 4 of
+  the 1,681 ordered pairs of questions the check must allow, all "purge" in one question
+  meeting "body" or "eat" in the next; "purge" now needs its object in the same question,
+  and all 1,681 pass. A refused turn is never replayed as context to anyone.
+- **Grounding accepts a repeated figure from an earlier turn's tool result, never from an
+  earlier answer** — an invented figure would otherwise pass by being said twice.
+- **Asking an earlier question again** (Less · Normal · More) names it, and it is answered
+  with the context it first had.
+
+Probing end to end found two more things, both fixed. The model wrote exercise names as
+identifiers — "bench_press", generalising from `body_metric_trend(metric="body_mass")` —
+and each cost a step on "never logged"; one turn ran out of steps. `lift_progression` now
+forgives case, underscores and hyphens, and still refuses a different word ("bench"). And
+a 4B model parrots instruction text: offered a list of what an offer may be, it ended an
+answer "another period". A quoted example sentence replaced the list — and was parroted in
+turn. The first run read back through the Model log ended on it word for word, offering
+last year, which the data does not have, so the "yes" that accepted it found nothing. The
+instruction is now a rule with no example in it: offer only what a tool result showed,
+never a period it showed no records for. Six offers in six then named data a tool had
+returned, and each "yes" found records.
 
 **Found while testing, and deliberately not fixed here: the UI's route around the
 pre-flight check.** The UI never names an agent, so every turn goes through the Steward,

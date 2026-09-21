@@ -52,7 +52,7 @@ flowchart LR
   lmstudio[("LM Studio<br/>localhost:1234<br/>4B chat model")]
   pg[("Postgres 17<br/>hearth")]
   datadir[/"HEARTH_DATA_DIR<br/>real CSVs, outside the repo"/]
-  evals["make eval<br/>40 cases x 3 runs"]
+  evals["make eval<br/>61 cases x 3 runs"]
   evaldb[("hearth_eval<br/>fixture, rebuilt each run")]
 
   subgraph planned["Planned"]
@@ -67,9 +67,9 @@ flowchart LR
   importsUI --> dataRoutes
   entryUI --> dataRoutes
 
-  chatRoute --> steward
+  chatRoute --> preflight --> steward
   steward --> tally
-  steward --> preflight --> forge
+  steward --> forge
   steward --> declined
   tally --> tools
   forge --> tools
@@ -78,7 +78,7 @@ flowchart LR
   tally -. "prompt + tool results" .-> lmstudio
   forge -. "prompt + tool results" .-> lmstudio
 
-  chatRoute --> history
+  chatRoute -- "store the turn,<br/>read the last few" --> history
   threadsRoute --> history
   history -. "title, reasoning off" .-> lmstudio
   history -- "read-write role" --> pg
@@ -118,19 +118,20 @@ sequenceDiagram
   participant M as LM Studio
 
   UI->>API: question (+ thread id)
-  API->>DB: store the question
+  API->>DB: read the last few turns, store the question
   API-->>UI: thread
   API->>S: route
-  S->>M: which specialist? (constrained JSON)
+  Note over S: pre-flight check — the question, with the one before it
+  S->>M: which specialist? (+ the last question and its offer)
   S-->>UI: routed — who is answering
   S->>A: dispatch
-  A->>M: question + tool schemas
+  A->>M: its own last few answers + question + tool schemas
   M-->>A: tool call and its arguments
   A->>DB: fixed query, read-only role
   A->>M: tool result — figures already computed
   M-->>A: answer text
   A-->>UI: tokens, streamed
-  API->>DB: store the answer
+  API->>DB: store the answer and its tool results
   API->>M: title (first turn only, reasoning off)
   API-->>UI: title
 ```
@@ -147,8 +148,9 @@ text is not in this table, because it is not implemented.
 
 | Rule | Enforced by | Proven by |
 |---|---|---|
-| **Nothing harmful reaches a model** — self-harm, hate speech, disordered eating | `agents/preflight.py`, run before the Steward's router and again in each specialist. A refused question is never sent to any model, including the one that writes titles. Self-harm gets a reply pointing to 988; hate speech is declined in one line | `tests/test_preflight.py` (113 cases in both directions, including money and gym idioms that must pass), `tests/test_guardrails.py` (every entry point refuses with every model constructor rigged to fail) |
-| **1. The model never does arithmetic** | Tools compute every figure; `agents/grounding.py` checks every dollar amount and weight in every answer against the numbers its tools returned, and flags any that no tool produced — shown under the answer and stored with it | `tests/test_grounding.py`, `tests/test_chat_route.py`; the evals fail a grounded or caveat case on any ungrounded figure |
+| **Nothing harmful reaches a model** — self-harm, hate speech, disordered eating | `agents/preflight.py`, run before the Steward's router and again in each specialist. On a follow-up it reads the new question together with the earlier ones that model will see, so a request split across turns ("help me lose 10kg" / "in 2 weeks") is refused. A refused question is never sent to any model — not as a turn, not as a title, not later as context. Self-harm gets a reply pointing to 988; hate speech is declined in one line | `tests/test_preflight.py` (113 cases in both directions, including money and gym idioms that must pass), `tests/test_guardrails.py` (every entry point refuses with every model constructor rigged to fail, split requests included), `tests/test_conversation.py` (all 1,681 pairs of allowed questions still pass together) |
+| **1. The model never does arithmetic** | Tools compute every figure; `agents/grounding.py` checks every dollar amount and weight in every answer against the numbers its tools returned, and flags any that no tool produced — shown under the answer and stored with it. A figure repeated on a follow-up counts only if an earlier turn's *tool* returned it, never because an earlier answer said it | `tests/test_grounding.py`, `tests/test_chat_route.py`, `tests/test_threads_route.py`; the evals fail a grounded or caveat case on any ungrounded figure |
+| **Context is scoped and capped** | `agents/conversation.py`: a follow-up carries at most 3 earlier exchanges and 4,000 characters of them, whole or not at all. Each specialist sees only its own answers — Forge never reads a balance — and the router only the last question and the last line of its answer. Earlier tool results are never sent back | `tests/test_conversation.py` |
 | **2. The model never writes SQL** | Fixed parameterized query functions, run through a read-only Postgres role | `tests/test_readonly_role.py` — the role provably cannot write |
 | **3. No live financial connections** | Data enters by CSV from `HEARTH_DATA_DIR` or by hand. The API takes a file name, never a path or an upload; the folder must be outside the repo | `tests/test_datadir.py`, `tests/test_data_routes.py` |
 | **4. No account numbers** | No column for one. Imports refuse an account-number column, and any account name, filename or label with four digits in a row, before anything is stored. Errors mask digits | `tests/test_schema.py`, `tests/test_fidelity.py`, `tests/test_manual_entry.py` |
@@ -174,7 +176,7 @@ measurement found, is in [docs/plan.md](docs/plan.md).
 | 5 | Tally, end to end | Done | Net worth exact to the cent with the coverage gap stated → **3/3** |
 | 6 | Steward and routing | Done | Routing ≥ 90% → **60/60**; a delegation loop stops at 6 hops |
 | 7 | Eval harness | Done | A prompt edit moves a number → caveat cases 3/3 → 0/3 → 3/3; baseline **47/47, 141/141** |
-| 8 | Thread history | Done | Last week's thread found by a word you remember → found by "squat" and by "squatting" |
+| 8 | Thread history and follow-ups | Done | Last week's thread found by a word you remember → found by "squat" and by "squatting"; "yes" to an offer is understood |
 | 9 | Errand and egress (web search) | **Blocked** — SearXNG needs Docker or a native install | A prompt engineered to leak a balance into a search raises `EgressViolation` |
 | 10 | RAG over documents | **Blocked** — pgvector needs an MSVC build | Retrieval traceable per answer; context stays within budget |
 | 11 | Forge (training) | Done over the fixture; real fitness data source open | Refusal path tested → pre-flight check now runs before routing, on every question |
@@ -330,6 +332,15 @@ answer and its headline figure, normal walks through the main figures with their
 more lists everything the tool returned. The level changes how much is said and nothing
 else — each level's instruction is a file in `prompts/detail/`, and every rule lives in
 the specialist's own prompt, so it holds at all three (`tests/test_detail.py`).
+
+**Follow-ups are understood.** Answers end by offering one more thing, and "yes" accepts
+it: a turn in an existing thread carries its last few exchanges. The router sees the
+previous question and the last line of its answer, so "yes", "what about last year?" and
+"and my bench?" go where the conversation was, while advice still goes nowhere. Each
+specialist is shown its own recent answers and nothing else, and still fetches every
+figure again from a tool — a remembered figure is not a sourced one. Asking an earlier
+question again at another level answers it with the context it had then, not with what
+came after. What each model is shown, and why, is in `agents/conversation.py`.
 
 Two behaviours are load-bearing and are tested rather than hoped for:
 
