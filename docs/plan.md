@@ -380,6 +380,24 @@ the person it was written for. `agents/forge.py` calls it before `chat_model()` 
 reached, so the refusal is a `return`, not something the model is asked to produce and
 might not.
 
+**Addendum, 2026-09-22: a name nobody logged is not a period without records.**
+Found in the Model log: asked about "squat", Forge called the tool, was told "No lift
+called 'squat' has ever been logged. Logged lifts: back squat, bench press, pull-up", and
+answered "I have no sessions logged for that period" — which sends someone looking for
+data that was never missing. The tool now writes the finished sentence and marks it
+`caveat:`, the mechanism the coverage caveat has used since Phase 3, and Forge's prompt
+gained the rule to repeat such a line in full. 5/5 then said it was a name that was never
+logged; none said the period was empty.
+
+Two things the measurement corrected. The names first went in a second sentence, and the
+model repeated the first and stopped — so the answer never said what *was* logged, which
+is the half that helps; they are now inside the one sentence, and 3/3 named all three
+lifts. And the prompt's old line, "do not guess at a synonym and call the tool again", was
+being disobeyed usefully: handed the list, the model called again with "back squat" and
+answered the question. The rule now allows exactly that — one more call, with a name the
+tool listed — at which point the model stopped doing it, 3/3. Both answers are right; the
+retry is not something to rely on.
+
 `get_body_metric_trend` was added to `tools/fitness.py` to go with it: `body_metric` was
 seeded from Phase 1 and nothing read it, and a fitness specialist that cannot tell you your
 body-mass trend is a strange thing to ship — particularly when that number is the reason
@@ -420,7 +438,7 @@ The backlog said the drawer from a chat message is the useful part. Every answer
 its run; the standalone list is for runs nobody was watching. It earned its place on its
 first run, which showed an answer ending on a sentence copied from its own instructions
 (Phase 8's addendum), and Forge reporting "No lift called 'squat' has ever been logged" as
-"no sessions logged for that period" — an old misreading, recorded here, not yet fixed.
+"no sessions logged for that period" — an old misreading, fixed the next day (Phase 11).
 
 **Settings.** Built on the condition the backlog set: something genuinely per-session
 appeared. Three preferences, in Postgres, read where they are used, so a change is in

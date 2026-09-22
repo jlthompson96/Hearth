@@ -357,6 +357,15 @@ cases:
     question: How has my net worth moved this year?
     must_contain: ["{year}-07-31"]
     must_not_contain: ["dropped", "a drop", "fell", "sharp", "declined", "plunge"]
+  # A name nobody logged is not a period without records. The Model log caught
+  # the old wording being answered as "I have no sessions logged for that
+  # period", which sends someone looking for data that was never missing.
+  - id: caveat-unlogged-lift-is-a-name-not-a-gap
+    kind: caveat
+    agent: forge
+    question: "How has my squat progressed this year?"
+    must_contain: ["back squat"]
+    must_not_contain: ["no sessions logged", "no data for that period", "plateau"]
   - id: caveat-1rm-is-an-estimate
     kind: caveat
     agent: forge

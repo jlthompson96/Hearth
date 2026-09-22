@@ -71,13 +71,15 @@ body {
 }
 
 main {
-  /* The content column beside the sidebar. Wide enough for the thread panel
-     beside a 42rem conversation; the other screens hold their own measure
-     (.screen). */
+  /* The content column beside the sidebar: flush against it, not centred in
+     the space left over — auto margins here would centre a 64rem column
+     inside whatever the sidebar leaves, pushing it away from the sidebar on
+     any screen wider than 64rem plus the sidebar. Wide enough for the thread
+     panel beside a 42rem conversation; the other screens hold their own
+     measure (.screen). */
   flex: 1;
   min-width: 0;
   max-width: 64rem;
-  margin: 0 auto;
   padding: 1.5rem;
   min-height: 100vh;
   box-sizing: border-box;

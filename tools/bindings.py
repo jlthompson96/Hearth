@@ -325,11 +325,7 @@ def lift_progression(exercise: str, start: str, end: str) -> str:
                 )
             )
         except UnknownExerciseError:
-            known = _exercise_names()
-            return (
-                f"No lift called {exercise!r} has ever been logged. "
-                f"Logged lifts: {', '.join(known) if known else 'none'}."
-            )
+            return _unknown_name("lift", exercise, _exercise_names())
 
 
 @tool
@@ -347,11 +343,29 @@ def body_metric_trend(metric: str, start: str, end: str) -> str:
                 )
             )
         except UnknownMetricError:
-            known = _metric_names()
-            return (
-                f"No measurement called {metric!r} has been recorded. "
-                f"Recorded: {', '.join(known) if known else 'none'}."
-            )
+            return _unknown_name("measurement", metric, _metric_names())
+
+
+def _unknown_name(kind: str, asked: str, known: list[str]) -> str:
+    """A name that was never logged, written as the finished sentence the agent
+    repeats — the mechanism `Coverage.caveat()` uses, for the same reason.
+
+    "No lift called 'squat' has ever been logged. Logged lifts: back squat, ..."
+    was the wording before, and the Model log caught the answer it produced:
+    "I have no sessions logged for that period." A name nobody logged and a
+    period with no sessions are different things, and the second sends someone
+    looking for missing data that was never missing. Handing over a sentence to
+    say leaves nothing to compose.
+    """
+    names = ", ".join(known[:-1]) + f" and {known[-1]}" if len(known) > 1 else "".join(known)
+    have = f"the {kind}s in your log are {names}" if known else f"your log has no {kind}s at all"
+    # The names go in the first sentence. Handed them in a second one, the model
+    # repeated the first and stopped, and the answer never said what was logged
+    # — which is the half that helps.
+    return (
+        f"caveat: You have no {kind} called {asked!r} logged — {have} — so this is "
+        f"a name that was never logged, not a period without records."
+    )
 
 
 def _spelling(name: str) -> str:

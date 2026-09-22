@@ -243,15 +243,21 @@ def test_lift_progression_reports_sessions_and_marks_the_estimate(_bound: None) 
     assert "estimate, not a tested max" in result
 
 
-def test_an_unlogged_lift_lists_the_logged_ones(_bound: None) -> None:
+def test_an_unlogged_lift_is_a_sentence_saying_it_is_a_name_not_a_gap(_bound: None) -> None:
+    """The Model log caught the old wording being answered as "I have no
+    sessions logged for that period" — a gap in the records, which it is not.
+    The tool now hands over the sentence, marked as one to repeat."""
     from tools.bindings import lift_progression
 
     result = lift_progression.invoke(
         {"exercise": "hack squat", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
     )
 
-    assert "has ever been logged" in result
-    assert "back squat" in result
+    assert result.startswith("caveat: ")
+    assert "no lift called 'hack squat' logged" in result
+    assert "never logged, not a period without records" in result
+    assert "back squat" in result and "bench press" in result
+    assert "NO DATA" not in result, "an unknown name is not an empty period"
 
 
 @pytest.mark.parametrize("written", ["bench_press", "Bench Press", "bench-press", " bench  press "])
@@ -277,7 +283,7 @@ def test_spelling_is_forgiven_but_a_different_word_is_not(_bound: None) -> None:
         {"exercise": "bench", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
     )
 
-    assert "has ever been logged" in result
+    assert "no lift called 'bench' logged" in result
 
 
 def test_body_metric_trend_reports_values_exactly_as_recorded(_bound: None) -> None:
@@ -301,7 +307,8 @@ def test_an_unrecorded_metric_lists_what_is_recorded(_bound: None) -> None:
         {"metric": "body fat", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
     )
 
-    assert "has been recorded" in result
+    assert result.startswith("caveat: ")
+    assert "no measurement called 'body fat' logged" in result
     assert "body_mass" in result
 
 
