@@ -57,3 +57,22 @@ def test_an_answer_with_no_figures_has_nothing_to_flag() -> None:
 
 def test_each_figure_is_flagged_once() -> None:
     assert ungrounded("$5.00 and again $5.00", []) == ["$5.00"]
+
+
+def test_a_percentage_no_tool_returned_is_flagged() -> None:
+    """Asked what share of a net worth sat in one account, the model answered
+    "100%" — arithmetic on two figures, which is what rule 1 forbids."""
+    result = "\n".join(
+        [
+            "VTI  $27,600.00  56.1%",
+            "total of these holdings, which is not net worth: $49,200.00",
+        ]
+    )
+
+    assert ungrounded("100% of it is in your brokerage.", [result]) == ["100%"]
+    assert ungrounded("VTI is 56.1% of the account.", [result]) == []
+
+
+def test_a_percentage_the_question_carried_is_not_flagged() -> None:
+    """The same rule as for money: what they typed is a fair thing to repeat."""
+    assert ungrounded("A 4% withdrawal is what you asked about.", ["", "is 4% safe"]) == []

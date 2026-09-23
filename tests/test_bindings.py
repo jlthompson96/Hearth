@@ -165,7 +165,16 @@ def test_allocation_percentages_come_from_the_query(_bound: None) -> None:
 
     assert "VTI" in result and "BND" in result
     assert "%" in result
-    assert "total:" in result
+    assert "total of these holdings, which is not net worth:" in result
+
+
+def test_the_allocation_total_says_it_is_not_net_worth(_bound: None) -> None:
+    """Handed a bare "total", the model answered "your net worth is $49,200.00"
+    — the holdings total, with savings and a credit card left out of it."""
+    result = allocation.invoke({"as_of": f"{YEAR}-12-31"})
+
+    assert "which is not net worth" in result
+    assert not any(line.startswith("total:") for line in result.splitlines())
 
 
 def test_allocation_hands_the_model_each_account_s_positions(_bound: None) -> None:

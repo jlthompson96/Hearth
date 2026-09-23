@@ -148,7 +148,9 @@ def _render_allocation(result: Allocation) -> str:
             f"{result.as_of_used:{ISO}}."
         )
     lines += [f"  {s.symbol}  {_money(s.market_value)}  {s.percentage}%" for s in result.slices]
-    lines.append(f"total: {_money(result.total)}")
+    # Named, not just totalled: handed a bare "total", the model reported it as
+    # the person's net worth — which it is not, and which no tool here returns.
+    lines.append(f"total of these holdings, which is not net worth: {_money(result.total)}")
     if result.accounts:
         lines.append("by account:")
         for account in result.accounts:
