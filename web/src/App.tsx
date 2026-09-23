@@ -27,6 +27,7 @@ import { ManualEntry } from './ManualEntry'
 import { ModelLog } from './ModelLog'
 import { Settings } from './Settings'
 import { Sidebar, type NavItem, type Health as SidebarHealth } from './Sidebar'
+import { ToastHost } from './toast'
 // Generated from the API's OpenAPI schema by `npm run gen:types`, and committed
 // so a fresh clone typechecks without a backend running. Never hand-edited.
 import type { components } from './api/schema'
@@ -116,41 +117,44 @@ export function App() {
   }, [])
 
   return (
-    <div className="shell">
-      <Sidebar
-        items={SCREENS}
-        current={screen}
-        open={panels.nav}
-        onToggle={() => setPanels((p) => ({ ...p, nav: !p.nav }))}
-        health={healthOf(probe)}
-        theme={theme}
-        onTheme={(next) => {
-          setTheme(next)
-          applyTheme(next)
-        }}
-      />
+    <>
+      <ToastHost />
+      <div className="shell">
+        <Sidebar
+          items={SCREENS}
+          current={screen}
+          open={panels.nav}
+          onToggle={() => setPanels((p) => ({ ...p, nav: !p.nav }))}
+          health={healthOf(probe)}
+          theme={theme}
+          onTheme={(next) => {
+            setTheme(next)
+            applyTheme(next)
+          }}
+        />
 
-      <main>
-        <div className="view" hidden={screen !== '#/'}>
-          <Chat
-            active={screen === '#/'}
-            panelOpen={panels.threads}
-            onTogglePanel={() => setPanels((p) => ({ ...p, threads: !p.threads }))}
-          />
-        </div>
-        <div className="view" hidden={screen !== '#/imports'}>
-          <Imports active={screen === '#/imports'} />
-        </div>
-        <div className="view" hidden={screen !== '#/entry'}>
-          <ManualEntry active={screen === '#/entry'} />
-        </div>
-        <div className="view" hidden={screen !== '#/log'}>
-          <ModelLog active={screen === '#/log'} />
-        </div>
-        <div className="view" hidden={screen !== '#/settings'}>
-          <Settings active={screen === '#/settings'} />
-        </div>
-      </main>
-    </div>
+        <main>
+          <div className="view" hidden={screen !== '#/'}>
+            <Chat
+              active={screen === '#/'}
+              panelOpen={panels.threads}
+              onTogglePanel={() => setPanels((p) => ({ ...p, threads: !p.threads }))}
+            />
+          </div>
+          <div className="view" hidden={screen !== '#/imports'}>
+            <Imports active={screen === '#/imports'} />
+          </div>
+          <div className="view" hidden={screen !== '#/entry'}>
+            <ManualEntry active={screen === '#/entry'} />
+          </div>
+          <div className="view" hidden={screen !== '#/log'}>
+            <ModelLog active={screen === '#/log'} />
+          </div>
+          <div className="view" hidden={screen !== '#/settings'}>
+            <Settings active={screen === '#/settings'} />
+          </div>
+        </main>
+      </div>
+    </>
   )
 }

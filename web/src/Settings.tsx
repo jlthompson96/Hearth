@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { reason } from './api/http'
 import { settings, type Models, type Preference, type Settings as SettingsData } from './api/settings'
+import { showToast } from './toast'
 
 /** How each value reads on screen. The API sends the raw value. */
 function choiceLabel(key: string, value: number | string): string {
@@ -240,13 +241,16 @@ export function Settings({ active }: { active: boolean }) {
     setBusy(true)
     try {
       await settings.write(preference.key, value)
-      setStatus({
-        ok: true,
-        text: `${preference.label}: ${choiceLabel(preference.key, value)}. In effect on the next question.`,
-      })
+      const text = `${preference.label}: ${choiceLabel(preference.key, value)}. In effect on the next question.`
+      setStatus({ ok: true, text })
+      // The inline line above is the record — it stays once the toast clears.
+      // This is the courtesy on top, for a change made from across the room.
+      showToast(text, 'ok')
       await refresh()
     } catch (error) {
-      setStatus({ ok: false, text: reason(error) })
+      const text = reason(error)
+      setStatus({ ok: false, text })
+      showToast(text, 'error')
     } finally {
       setBusy(false)
     }
@@ -273,6 +277,7 @@ export function Settings({ active }: { active: boolean }) {
             models={data.models}
             onSwitched={(text, ok) => {
               setStatus({ ok, text })
+              showToast(text, ok ? 'ok' : 'error')
               void refresh()
             }}
           />

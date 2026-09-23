@@ -15,8 +15,17 @@ import { Fragment, useState, type ReactNode } from 'react'
 
 import { withNegativesInRed } from './money'
 import { canon, findSource, formatArgs, FIGURE, type ToolRun } from './provenance'
+import { showToast } from './toast'
 
 const BOLD = /\*\*([^*\n]+)\*\*/g
+
+/** The answer's markdown bold markers, stripped. A reader copying an answer
+ *  wants the prose, not the `**...**` a 4B model sometimes leaves in (see the
+ *  module comment above) — the one place this file's text output differs from
+ *  what renderAnswer puts on screen. */
+export function plainText(text: string): string {
+  return text.replace(BOLD, '$1')
+}
 
 /** Longest first, so "$1,234.50" is one match rather than "$1,234" and a tail. */
 export function figurePattern(figures: string[]): RegExp | null {
@@ -119,10 +128,15 @@ export function Answer({
   text,
   ungrounded,
   tools,
+  streaming,
 }: {
   text: string
   ungrounded?: string[]
   tools: ToolRun[]
+  /** Tokens are still arriving: a caret marks the point they will resume, the
+   *  same idea as the tool-fetched Thinking indicator above the answer, moved
+   *  to where the text itself is growing. */
+  streaming?: boolean
 }) {
   const [picked, setPicked] = useState<string | null>(null)
   const link: FigureLink = {
@@ -134,7 +148,7 @@ export function Answer({
 
   return (
     <>
-      <p className="answer">{renderAnswer(text, ungrounded, link)}</p>
+      <p className={streaming ? 'answer streaming' : 'answer'}>{renderAnswer(text, ungrounded, link)}</p>
       {source && (
         <div className="source" role="region" aria-label="Where this figure came from">
           <p className="source-head">
@@ -152,5 +166,76 @@ export function Answer({
         </div>
       )}
     </>
+  )
+}
+
+function CopyIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+/**
+ * Copies an answer's plain text (markdown stripped) to the clipboard. The
+ * confirmation is a quick inline swap to a checkmark, not a toast — it
+ * belongs right where the click happened. A toast is for the one way this can
+ * still fail silently otherwise: the Clipboard API refused (no secure
+ * context, no permission granted).
+ */
+export function CopyAnswerButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(plainText(text))
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      showToast('Could not copy — the browser blocked clipboard access.', 'error')
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={copied ? 'copy-btn copied' : 'copy-btn'}
+      onClick={() => void copy()}
+      aria-label={copied ? 'Copied' : 'Copy answer'}
+      title={copied ? 'Copied' : 'Copy answer'}
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
   )
 }

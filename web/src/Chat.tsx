@@ -23,7 +23,7 @@ import { streamChat, type ChatEvent } from './api/chat'
 import { reason } from './api/http'
 import { threads, type StoredMessage } from './api/threads'
 import { settings } from './api/settings'
-import { Answer } from './answer'
+import { Answer, CopyAnswerButton } from './answer'
 import { formatArgs, type ToolRun } from './provenance'
 import { ThreadPanel } from './Threads'
 
@@ -118,6 +118,80 @@ const EXAMPLES: { agent: 'tally' | 'forge'; question: string }[] = [
   { agent: 'forge', question: 'How has my body weight changed?' },
   { agent: 'forge', question: 'How has my squat progressed?' },
 ]
+
+/** A little personality for the one part of a turn with no real state to
+ *  report. "Reading results" (below) is left alone — it names an actual tool
+ *  call in flight, which is more useful sitting still than joining the
+ *  rotation. Before routing lands there's no agent to pun on yet, so it opens
+ *  on the generic set and switches the moment `turn.routedTo` says which
+ *  specialist picked it up. */
+const GENERIC_WORDS = ['Thinking', 'Drafting', 'Baking', 'Ideating']
+const AGENT_WORDS: Record<string, string[]> = {
+  tally: ['Tallying', 'Crunching', 'Balancing the books', 'Reconciling', 'Netting it out', 'Auditing'],
+  forge: ['Forging ahead', 'Flexing', 'Repping it out', 'Spotting', 'Pumping iron', 'Bulking up'],
+}
+const FUN_WORD_MS = 1700
+
+/** Cycles through `words` on a timer while `active`; holds on the first word
+ *  otherwise, and restarts from it whenever `words` itself changes — the
+ *  moment routing lands and the set switches from generic to a specialist's,
+ *  the rotation should read as starting over, not continuing mid-count into a
+ *  different list. */
+function useFunWord(active: boolean, words: readonly string[]): string {
+  const [index, setIndex] = useState(0)
+  useEffect(() => {
+    setIndex(0)
+    if (!active) return
+    const id = window.setInterval(() => setIndex((n) => (n + 1) % words.length), FUN_WORD_MS)
+    return () => window.clearInterval(id)
+  }, [active, words])
+  return words[index] ?? words[0]
+}
+
+/** What's happening before the first word of an answer lands. Tool calls
+ *  already name themselves (ToolLine, below); this says what the wait between
+ *  them is for, so a quiet stretch on an 11-second turn (Phase 8's addendum)
+ *  reads as working rather than stuck — and changes on its own, so it never
+ *  reads as a frozen label either. */
+function Thinking({ turn }: { turn: Turn }) {
+  const last = turn.tools[turn.tools.length - 1]
+  const reading = last !== undefined && last.result === undefined
+  const words = (turn.routedTo && AGENT_WORDS[turn.routedTo]) || GENERIC_WORDS
+  const word = useFunWord(!reading, words)
+  const text = reading ? 'Reading results' : word
+  return (
+    <p className="thinking" role="status">
+      <span className="thinking-dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      {/* Keyed on the word itself: a fresh element per change is what lets
+          the CSS enter animation replay on every swap, not just on mount. */}
+      <span key={text} className="thinking-label">
+        {text}…
+      </span>
+    </p>
+  )
+}
+
+function DownIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 5v14M5 12l7 7 7-7" />
+    </svg>
+  )
+}
 
 function ToolLine({ call }: { call: ToolCall }) {
   const args = formatArgs(call.args)
@@ -235,10 +309,33 @@ export function Chat({
   /** Where Up/Down have walked back to through earlier questions; -1 is none. */
   const recallAt = useRef(-1)
   const wasBusy = useRef(false)
+  /** True while the transcript is scrolled to (or near) its own bottom. Every
+   *  token during a stream changes `turns`, so scrolling on every change
+   *  without this would drag the view back down each time — undoing a
+   *  reader's own scroll-up mid-answer. Only a pinned reader is carried along;
+   *  anyone else sees the Jump-to-latest pill instead. */
+  const [pinned, setPinned] = useState(true)
+  const scrollDebounce = useRef<number>(undefined)
 
   useEffect(() => {
+    if (pinned) endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [turns, pinned])
+
+  /** Debounced rather than computed on every scroll event: a smooth
+   *  auto-scroll itself fires a burst of scroll events, and checking only once
+   *  they settle is what keeps this from flickering during that animation. */
+  function onTranscriptScroll(event: React.UIEvent<HTMLDivElement>) {
+    const el = event.currentTarget
+    window.clearTimeout(scrollDebounce.current)
+    scrollDebounce.current = window.setTimeout(() => {
+      setPinned(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
+    }, 120)
+  }
+
+  function jumpToLatest() {
+    setPinned(true)
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [turns])
+  }
 
   const relist = () => setVersion((n) => n + 1)
 
@@ -309,6 +406,7 @@ export function Chat({
       const detail = await threads.get(id)
       setThreadId(id)
       setTurns(toTurns(detail.messages))
+      setPinned(true)
       setFailure(null)
     } catch (error) {
       setFailure(reason(error))
@@ -319,6 +417,7 @@ export function Chat({
     if (busy) return
     setThreadId(null)
     setTurns([])
+    setPinned(true)
     setFailure(null)
   }
 
@@ -351,6 +450,9 @@ export function Chat({
     rerunOf?: string,
   ) {
     setBusy(true)
+    // Asking is the reader's own action; whatever they scrolled to before, a
+    // fresh question should carry them down to watch it answer.
+    setPinned(true)
     const controller = new AbortController()
     abortRef.current = controller
     const index = turns.length
@@ -400,7 +502,7 @@ export function Chat({
       />
 
       <section className="chat">
-        <div className="transcript">
+        <div className="transcript" onScroll={onTranscriptScroll}>
           {failure && <p className="error">{failure}</p>}
           {turns.length === 0 && (
             <div className="empty">
@@ -435,7 +537,14 @@ export function Chat({
               {turn.tools.map((call, j) => (
                 <ToolLine key={j} call={call} />
               ))}
-              {turn.answer && <Answer text={turn.answer} ungrounded={turn.ungrounded} tools={turn.tools} />}
+              {turn.answer && (
+                <Answer
+                  text={turn.answer}
+                  ungrounded={turn.ungrounded}
+                  tools={turn.tools}
+                  streaming={turn.streaming}
+                />
+              )}
               {turn.ungrounded && turn.ungrounded.length > 0 && (
                 <div className="ungrounded" role="status">
                   <WarnIcon />
@@ -448,16 +557,17 @@ export function Chat({
                 </div>
               )}
               {turn.refusal && <p className="refusal">{turn.refusal}</p>}
-              {turn.answer &&
-                !turn.streaming &&
-                !turn.stopped &&
-                turn.routedTo &&
-                SPECIALISTS.has(turn.routedTo) && (
-                <DetailControl
-                  current={turn.detail ?? 'normal'}
-                  disabled={busy}
-                  onPick={(detail) => void rerun(turn, detail)}
-                />
+              {turn.answer && !turn.streaming && !turn.stopped && (
+                <div className="answer-actions">
+                  <CopyAnswerButton text={turn.answer} />
+                  {turn.routedTo && SPECIALISTS.has(turn.routedTo) && (
+                    <DetailControl
+                      current={turn.detail ?? 'normal'}
+                      disabled={busy}
+                      onPick={(detail) => void rerun(turn, detail)}
+                    />
+                  )}
+                </div>
               )}
               {turn.stopped && (
                 <div className="stopped" role="status">
@@ -478,12 +588,18 @@ export function Chat({
                   )}
                 </div>
               )}
-              {turn.streaming && !turn.answer && !turn.refusal && <p className="muted">…</p>}
+              {turn.streaming && !turn.answer && !turn.refusal && <Thinking turn={turn} />}
               {turn.unanswered && <p className="muted small">No answer was stored for this question.</p>}
               {turn.error && <p className="error">{turn.error}</p>}
             </article>
           ))}
           <div ref={endRef} />
+          {!pinned && turns.length > 0 && (
+            <button type="button" className="jump-pill" onClick={jumpToLatest}>
+              <DownIcon />
+              Jump to latest
+            </button>
+          )}
         </div>
 
         <form className="composer" onSubmit={send}>

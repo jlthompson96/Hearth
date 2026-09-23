@@ -6,9 +6,16 @@
  * too. `Intl.NumberFormat` would need a `Number` first, which is a binary float:
  * exact for any balance anyone here has, but "exact enough" is the phrase
  * CLAUDE.md's NUMERIC rule exists to keep away from money. Grouping digits and
- * padding cents is string work, and nothing below does arithmetic.
+ * padding cents is string work, and nothing below does arithmetic — with one
+ * deliberate, narrow exception: when a displayed balance changes, `Money`
+ * counts between the old and new figure instead of jumping. Every *intermediate*
+ * frame of that count is a `Number`, rounded to cents for display only, and
+ * thrown away; the frame that finally lands always comes back through
+ * `formatUSD` on the exact string the API sent, never through the animation's
+ * own arithmetic. Nothing this component tweens is ever the value shown as
+ * settled, stored, or read back — see CLAUDE.md rule 1.
  */
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 const DECIMAL = /^([+-])?(\d+)(?:\.(\d+))?$/
 
@@ -29,8 +36,55 @@ export function formatUSD(amount: string): { text: string; negative: boolean } {
   return { text: `${negative ? '-' : ''}$${grouped}.${cents}`, negative }
 }
 
+/** Read once per animation, not subscribed: this only needs to know at the
+ *  moment a count starts whether motion is wanted, not to react live to the OS
+ *  setting changing mid-session. */
+function reducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+const COUNT_MS = 500
+
 export function Money({ amount }: { amount: string }) {
-  const { text, negative } = formatUSD(amount)
+  const previous = useRef<string | null>(null)
+  const [shown, setShown] = useState(amount)
+  const frame = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    const from = previous.current
+    previous.current = amount
+    // First render, no real change, or motion declined: show it plainly —
+    // an account list mounting is not "every balance rising from zero".
+    if (from === null || from === amount || reducedMotion()) {
+      setShown(amount)
+      return
+    }
+    const start = Number(from)
+    const end = Number(amount)
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      setShown(amount)
+      return
+    }
+    const startedAt = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - startedAt) / COUNT_MS)
+      if (t >= 1) {
+        setShown(amount) // the exact string the API sent, not the tween
+        return
+      }
+      // Ease-out: quick at first, settling in — the same restraint as the
+      // streaming caret and the Thinking shimmer, not a linear count.
+      const eased = 1 - (1 - t) ** 3
+      setShown((start + (end - start) * eased).toFixed(2))
+      frame.current = requestAnimationFrame(tick)
+    }
+    frame.current = requestAnimationFrame(tick)
+    return () => {
+      if (frame.current !== undefined) cancelAnimationFrame(frame.current)
+    }
+  }, [amount])
+
+  const { text, negative } = formatUSD(shown)
   return <span className={negative ? 'money negative' : 'money'}>{text}</span>
 }
 
