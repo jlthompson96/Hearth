@@ -22,7 +22,7 @@ export
 
 API_PORT ?= 8000
 
-.PHONY: dev migrate seed unseed test eval lint fmt install up down logs freeze clean hooks
+.PHONY: dev migrate seed unseed test eval lint fmt install up down logs backup start freeze clean hooks
 
 ## dev — docker compose up + backend + frontend
 dev: install up
@@ -128,6 +128,14 @@ ifdef PGDATA
 else
 	docker compose logs -f
 endif
+
+## backup — a compressed dump of the database, kept outside the repository
+backup: install
+	$(PY) -m scripts.backup
+
+## start — Postgres if it is down, then the backend and the frontend
+start: install
+	$(PY) -m scripts.start
 
 ## freeze — turn requirements.txt ranges into exact pins, once resolved
 freeze: install

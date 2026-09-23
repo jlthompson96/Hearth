@@ -477,12 +477,39 @@ make unseed       # empty the development database, before a first real import
 make test         # pytest — fast, no model, run it after every edit
 make eval         # the behavioural case file — needs the model, takes minutes
 make lint         # ruff + mypy + tsc
+make start        # Postgres if it is down, then the backend and the frontend
+make backup       # a compressed dump of the database, outside the repository
 ```
 
 Also available: `make up` / `make down` / `make logs` for infrastructure alone, `make fmt`
 to apply formatting, `make hooks` to install the pre-commit reminder, `make freeze` to
 resolve `requirements.txt`'s ranges into exact pins, and `make clean` to remove both
 toolchains.
+
+## Running it day to day
+
+**Starting.** `scripts\hearth.cmd` — double-click it, or run `make start`. It starts
+Postgres if the cluster is down, then the backend and the frontend, waits for both to
+answer, and opens the browser. Anything already running is left alone, so running it twice
+is harmless. Ctrl-C stops the servers; Postgres keeps running, and `make down` stops that.
+
+Postgres here is a native cluster, not a service, so it does not survive a reboot — which
+is what `make start` exists to hide.
+
+**Backing up.** `make backup` writes a compressed dump to `%LOCALAPPDATA%\Hearth\backups`,
+or to `HEARTH_BACKUP_DIR` if you set one, and keeps the newest fourteen. It refuses to
+write inside the repository: a dump is the whole database in one file, and that file must
+never be committed. The password goes to `pg_dump` in the environment, never on the
+command line where other processes can read it.
+
+Imports can always be run again from the CSVs in `$HEARTH_DATA_DIR`. Everything else —
+balances entered by hand, every thread, the model log — exists only in Postgres, which is
+what makes the dump worth taking. To restore one:
+
+```bash
+createdb -U <user> hearth
+pg_restore -U <user> -d hearth --clean --if-exists <the .dump file>
+```
 
 ## Measuring behaviour
 
