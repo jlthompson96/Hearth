@@ -29,6 +29,30 @@ class UnknownExerciseError(LookupError):
     is usually a typo in the exercise name."""
 
 
+class MixedUnitsError(ValueError):
+    """A lift or measurement recorded in more than one unit over the period
+    asked about. Its values are subtracted from each other, and 127.500 kg to
+    275 lb is not a change of +147.5. Manual entry and imports refuse a second
+    unit; this is the tools' own guard, for whatever got in another way."""
+
+    def __init__(self, name: str, units: tuple[str, ...]) -> None:
+        super().__init__(f"{name} is recorded in {' and '.join(units)}")
+        self.name = name
+        self.units = units
+
+
+def spelling(name: str) -> str:
+    """How a name is compared: case, runs of spaces, underscores and hyphens
+    ignored. "Bench_Press" and "bench press" are one lift; "bench" is not."""
+    return " ".join(name.replace("_", " ").replace("-", " ").lower().split())
+
+
+def _one_unit(conn: sa.Connection, name: str, query: str, params: dict[str, object]) -> None:
+    units = tuple(r[0] for r in conn.execute(sa.text(query), params))
+    if len(units) > 1:
+        raise MixedUnitsError(name, units)
+
+
 @dataclass(frozen=True)
 class LiftSession:
     performed_on: dt.date
@@ -61,6 +85,21 @@ def get_lift_progression(
     ).scalar_one()
     if not known:
         raise UnknownExerciseError(exercise)
+
+    _one_unit(
+        conn,
+        exercise,
+        """
+        select distinct ws.weight_unit
+        from workout_set ws
+        join workout w on w.id = ws.workout_id
+        where ws.exercise = :exercise
+          and w.performed_on between :start and :end
+          and ws.weight_unit is not null
+        order by 1
+        """,
+        {"exercise": exercise, "start": start, "end": end},
+    )
 
     # The heaviest set of each session, and the reps achieved at that weight.
     rows = conn.execute(
@@ -136,6 +175,14 @@ def get_body_metric_trend(
     ).scalar_one()
     if not known:
         raise UnknownMetricError(metric)
+
+    _one_unit(
+        conn,
+        metric,
+        "select distinct unit from body_metric "
+        "where metric = :metric and as_of between :start and :end order by 1",
+        {"metric": metric, "start": start, "end": end},
+    )
 
     rows = conn.execute(
         sa.text(

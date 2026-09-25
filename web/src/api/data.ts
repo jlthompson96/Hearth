@@ -18,6 +18,12 @@ export type Account = Schemas['Account']
 export type Entry = Schemas['Entry']
 export type NewAccount = Schemas['NewAccount']
 export type NewBalance = Schemas['NewBalance']
+export type TrainingListing = Schemas['TrainingListing']
+export type WorkoutOut = Schemas['WorkoutOut']
+export type BodyWeightOut = Schemas['BodyWeightOut']
+export type NewWorkout = Schemas['NewWorkout']
+export type NewSet = Schemas['NewSet']
+export type NewBodyWeight = Schemas['NewBodyWeight']
 
 export const data = {
   files: () => call<ExportListing>('GET', '/api/imports/files'),
@@ -30,4 +36,11 @@ export const data = {
   createAccount: (account: NewAccount) => call<Account>('POST', '/api/accounts', account),
   recordBalance: (balance: NewBalance) => call<Entry>('POST', '/api/balances', balance),
   removeBalance: (id: number) => call<void>('DELETE', `/api/balances/${id}`),
+
+  training: () => call<TrainingListing>('GET', '/api/training'),
+  recordWorkout: (workout: NewWorkout) => call<WorkoutOut>('POST', '/api/workouts', workout),
+  removeWorkout: (id: string) => call<void>('DELETE', `/api/workouts/${id}`),
+  recordBodyWeight: (entry: NewBodyWeight) =>
+    call<BodyWeightOut>('POST', '/api/body-weights', entry),
+  removeBodyWeight: (id: number) => call<void>('DELETE', `/api/body-weights/${id}`),
 }

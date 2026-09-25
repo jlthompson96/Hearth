@@ -74,6 +74,20 @@ def parse_quantity(cell: str) -> Decimal:
     return _decimal(match["plain"], negative=match["sign"] == "-")
 
 
+def parse_weight(cell: str) -> Decimal:
+    """A lifted load or a body weight: a plain number, never negative, at most
+    three decimal places — what the measurement columns hold. A fourth place is
+    refused rather than rounded, for the reason a third cent is. The unit is
+    not part of the cell; the caller knows it."""
+    match = _QUANTITY.match(cell.strip())
+    if not match or match["sign"] or _places(match["plain"]) > 3:
+        raise ValueFormatError(
+            f"{shape(cell)!r} is not a weight (a plain number, not negative, at most three "
+            "decimal places)"
+        )
+    return _decimal(match["plain"], negative=False)
+
+
 def _money(cell: str, *, places: int, what: str) -> Decimal:
     match = _MONEY.match(cell.strip())
     if match:

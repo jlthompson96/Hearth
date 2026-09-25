@@ -16,6 +16,7 @@ from ingest.values import (
     parse_money,
     parse_price,
     parse_quantity,
+    parse_weight,
     shape,
 )
 
@@ -115,3 +116,19 @@ def test_an_account_number_or_its_last_four_is_recognised(text: str) -> None:
 )
 def test_an_ordinary_name_is_not(text: str) -> None:
     assert not looks_like_account_number(text)
+
+
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [("225", "225"), ("235.5", "235.5"), (" 1,005.25 ", "1005.25"), ("0.125", "0.125")],
+)
+def test_a_weight_is_a_plain_non_negative_decimal(cell: str, expected: str) -> None:
+    assert parse_weight(cell) == Decimal(expected)
+
+
+@pytest.mark.parametrize("cell", ["-5", "225.1234", "225 lb", "$225", "", "2.2.5"])
+def test_a_weight_that_cannot_be_stored_as_typed_is_refused(cell: str) -> None:
+    """A fourth decimal place is refused, not rounded: the column holds three,
+    and rounding would happen silently."""
+    with pytest.raises(ValueFormatError):
+        parse_weight(cell)

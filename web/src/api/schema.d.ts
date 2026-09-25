@@ -178,6 +178,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/training": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Training entered by hand */
+        get: operations["list_training_api_training_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a workout by hand */
+        post: operations["record_workout_api_workouts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workouts/{workout_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a workout entered by hand */
+        delete: operations["delete_workout_api_workouts__workout_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/body-weights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a body weight by hand */
+        post: operations["record_body_weight_api_body_weights_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/body-weights/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a body weight entered by hand */
+        delete: operations["delete_body_weight_api_body_weights__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/model-log": {
         parameters: {
             query?: never;
@@ -204,6 +289,23 @@ export interface paths {
         };
         /** One run: every model call and tool run, verbatim */
         get: operations["read_run_api_model_log__question_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search-audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search egress audit */
+        get: operations["list_entries_api_search_audit_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -347,6 +449,20 @@ export interface components {
              * Format: date-time
              */
             imported_at: string;
+        };
+        /** BodyWeightOut */
+        BodyWeightOut: {
+            /** Id */
+            id: number;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Weight */
+            weight: string;
+            /** Unit */
+            unit: string;
         };
         /**
          * ChatRequest
@@ -573,6 +689,44 @@ export interface components {
             /** Balance */
             balance: string;
         };
+        /** NewBodyWeight */
+        NewBodyWeight: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Weight */
+            weight: string;
+        };
+        /** NewSet */
+        NewSet: {
+            /** Exercise */
+            exercise: string;
+            /** Reps */
+            reps: number;
+            /** Weight */
+            weight?: string | null;
+        };
+        /** NewWorkout */
+        NewWorkout: {
+            /**
+             * Performed On
+             * Format: date
+             */
+            performed_on: string;
+            /**
+             * Kind
+             * @default strength
+             */
+            kind: string;
+            /** Duration Minutes */
+            duration_minutes?: number | string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Sets */
+            sets?: components["schemas"]["NewSet"][];
+        };
         /** PreferenceIn */
         PreferenceIn: {
             /** Value */
@@ -648,6 +802,31 @@ export interface components {
             failed: boolean;
             /** Chain */
             chain: components["schemas"]["StepOut"][];
+        };
+        /** SearchAuditEntryOut */
+        SearchAuditEntryOut: {
+            /** Id */
+            id: number;
+            /** Query */
+            query: string;
+            /** Allowed */
+            allowed: boolean;
+            /** Violation */
+            violation: string | null;
+            /** Result Count */
+            result_count: number | null;
+            /** Thread Id */
+            thread_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** SearchAuditListing */
+        SearchAuditListing: {
+            /** Entries */
+            entries: components["schemas"]["SearchAuditEntryOut"][];
         };
         /** SettingsOut */
         SettingsOut: {
@@ -770,6 +949,21 @@ export interface components {
             /** Result */
             result?: string | null;
         };
+        /** TrainingListing */
+        TrainingListing: {
+            /** Fixture Loaded */
+            fixture_loaded: boolean;
+            /** Unit */
+            unit: string;
+            /** Kinds */
+            kinds: string[];
+            /** Exercises */
+            exercises: string[];
+            /** Workouts */
+            workouts: components["schemas"]["WorkoutOut"][];
+            /** Body Weights */
+            body_weights: components["schemas"]["BodyWeightOut"][];
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -782,6 +976,40 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WorkoutOut */
+        WorkoutOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Performed On
+             * Format: date
+             */
+            performed_on: string;
+            /** Kind */
+            kind: string;
+            /** Duration Minutes */
+            duration_minutes: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Sets */
+            sets: components["schemas"]["WorkoutSetOut"][];
+        };
+        /** WorkoutSetOut */
+        WorkoutSetOut: {
+            /** Exercise */
+            exercise: string;
+            /** Set Number */
+            set_number: number;
+            /** Reps */
+            reps: number;
+            /** Weight */
+            weight: string | null;
+            /** Unit */
+            unit: string | null;
         };
     };
     responses: never;
@@ -1331,6 +1559,222 @@ export interface operations {
             };
         };
     };
+    list_training_api_training_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainingListing"];
+                };
+            };
+        };
+    };
+    record_workout_api_workouts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewWorkout"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutOut"];
+                };
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    delete_workout_api_workouts__workout_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workout_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    record_body_weight_api_body_weights_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewBodyWeight"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BodyWeightOut"];
+                };
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    delete_body_weight_api_body_weights__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nothing by that id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: conflicts with what is recorded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Refused: the input cannot be read as it stands */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
     list_runs_api_model_log_get: {
         parameters: {
             query?: {
@@ -1391,6 +1835,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Refusal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_entries_api_search_audit_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Older than this time */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchAuditListing"];
                 };
             };
             /** @description Validation Error */

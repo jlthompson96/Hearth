@@ -45,10 +45,12 @@ from tools.finance import (
 from tools.fitness import (
     LiftProgression,
     MetricTrend,
+    MixedUnitsError,
     UnknownExerciseError,
     UnknownMetricError,
     get_body_metric_trend,
     get_lift_progression,
+    spelling,
 )
 
 #: Dates are rendered and parsed in one format everywhere. The model is told
@@ -328,6 +330,8 @@ def lift_progression(exercise: str, start: str, end: str) -> str:
             )
         except UnknownExerciseError:
             return _unknown_name("lift", exercise, _exercise_names())
+        except MixedUnitsError as mixed:
+            return _mixed_units(mixed)
 
 
 @tool
@@ -346,6 +350,8 @@ def body_metric_trend(metric: str, start: str, end: str) -> str:
             )
         except UnknownMetricError:
             return _unknown_name("measurement", metric, _metric_names())
+        except MixedUnitsError as mixed:
+            return _mixed_units(mixed)
 
 
 def _unknown_name(kind: str, asked: str, known: list[str]) -> str:
@@ -370,8 +376,19 @@ def _unknown_name(kind: str, asked: str, known: list[str]) -> str:
     )
 
 
+def _mixed_units(mixed: MixedUnitsError) -> str:
+    """No figures at all: every one of them would be half of a subtraction
+    across units, and a model handed them would make that subtraction."""
+    units = " and ".join(mixed.units)
+    return (
+        f"caveat: {mixed.name} is recorded in both {units} over this period, so no change "
+        f"can be given — the figures are in different units. Ask about a period logged in "
+        f"one unit."
+    )
+
+
 def _spelling(name: str) -> str:
-    return " ".join(name.replace("_", " ").replace("-", " ").lower().split())
+    return spelling(name)
 
 
 def _as_logged(exercise: str) -> str:

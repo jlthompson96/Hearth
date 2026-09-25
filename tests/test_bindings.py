@@ -345,3 +345,33 @@ def test_forge_and_tally_do_not_share_tools() -> None:
     assert forge_names == {"lift_progression", "body_metric_trend"}
     assert not (forge_names & tally_names)
     print(f"\n  Forge tool schemas: ~{schema_cost(FORGE_TOOLS)} tokens")
+
+
+def test_a_lift_in_two_units_is_a_caveat_not_a_change(_bound: None, seeded: sa.Connection) -> None:
+    """Said as the finished sentence the agent repeats, like every other gap."""
+    from db.models import Workout, WorkoutSet
+    from tools.bindings import lift_progression
+
+    workout = seeded.execute(
+        sa.insert(Workout)
+        .values(performed_on=dt.date(YEAR, 9, 15), kind="strength")
+        .returning(Workout.id)
+    ).scalar_one()
+    seeded.execute(
+        sa.insert(WorkoutSet).values(
+            workout_id=workout,
+            exercise="back squat",
+            set_number=1,
+            reps=5,
+            weight=Decimal("275"),
+            weight_unit="lb",
+        )
+    )
+
+    result = lift_progression.invoke(
+        {"exercise": "back squat", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
+    )
+
+    assert result.startswith("caveat: ")
+    assert "kg and lb" in result
+    assert "change over the period" not in result

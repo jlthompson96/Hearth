@@ -1,5 +1,6 @@
 /**
- * Manual entry: accounts, and balances typed in by hand.
+ * Manual entry: accounts, and balances typed in by hand — and below them,
+ * training (TrainingEntry.tsx).
  *
  * The other door into the database, and the only place accounts are created —
  * an import names accounts but cannot say what kind each one is. A balance is
@@ -10,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { data, reason, type AccountListing, type Entry } from './api/data'
 import { Money } from './money'
+import { TrainingEntry } from './TrainingEntry'
 
 export function ManualEntry({ active }: { active: boolean }) {
   const [listing, setListing] = useState<AccountListing | null>(null)
@@ -115,6 +117,8 @@ export function ManualEntry({ active }: { active: boolean }) {
           </table>
         </>
       )}
+
+      <TrainingEntry active={active} />
     </section>
   )
 }

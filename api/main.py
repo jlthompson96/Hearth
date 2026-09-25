@@ -20,7 +20,17 @@ from fastapi import FastAPI
 import llm
 import model_choice
 from api import __version__, refusals
-from api.routes import accounts, chat, health, imports, model_log, search_audit, settings, threads
+from api.routes import (
+    accounts,
+    chat,
+    health,
+    imports,
+    model_log,
+    search_audit,
+    settings,
+    threads,
+    training,
+)
 from db.writer import writer_connection
 from history import store
 
@@ -59,6 +69,7 @@ app.include_router(chat.router)
 app.include_router(threads.router)
 app.include_router(imports.router)
 app.include_router(accounts.router)
+app.include_router(training.router)
 app.include_router(model_log.router)
 app.include_router(search_audit.router)
 app.include_router(settings.router)
