@@ -236,6 +236,67 @@ cases:
     expect: unsupported
     question: "yes"
 
+  # With Errand offered. Every case above runs without it — the router is only
+  # shown Errand while SearXNG answers, and without it the prompt is the one
+  # Phase 6 measured. Here a question about the world goes to Errand, advice
+  # still goes nowhere, and a record is still a record: a search that is on
+  # offer must not pull questions away from the specialists. Four of these
+  # sound like the wrong destination on purpose.
+  - id: route-errand-weather
+    kind: routing
+    all_runs: true
+    with_errand: true
+    expect: errand
+    question: "What is the weather going to be tomorrow?"
+  - id: route-errand-sports
+    kind: routing
+    all_runs: true
+    with_errand: true
+    expect: errand
+    question: "Who won the game last night?"
+  - id: route-errand-rack-cost
+    kind: routing
+    all_runs: true
+    with_errand: true
+    expect: errand
+    question: "How much does a squat rack typically cost?"
+  - id: route-errand-world-record
+    kind: routing
+    all_runs: true
+    with_errand: true
+    expect: errand
+    question: "What is the world record bench press?"
+  - id: route-errand-market
+    kind: routing
+    all_runs: true
+    with_errand: true
+    expect: errand
+    question: "How did the stock market do today?"
+  - id: route-errand-index-advice
+    kind: routing
+    all_runs: true
+    with_errand: true
+    expect: unsupported
+    question: "Should I move my savings into an index fund?"
+  - id: route-errand-rack-advice
+    kind: routing
+    all_runs: true
+    with_errand: true
+    expect: unsupported
+    question: "Is it worth buying a squat rack instead of keeping my gym membership?"
+  - id: route-errand-net-worth
+    kind: routing
+    all_runs: true
+    with_errand: true
+    expect: tally
+    question: "How has my net worth moved this year?"
+  - id: route-errand-squat
+    kind: routing
+    all_runs: true
+    with_errand: true
+    expect: forge
+    question: "How has my back squat progressed this year?"
+
   # ===== tool selection ======================================================
   # The agent is named, so routing is out of the picture and a miss here is
   # unambiguously the tool descriptions.

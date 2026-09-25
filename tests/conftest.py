@@ -24,6 +24,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 TEST_DATABASE = "hearth_test"
 
 
+@pytest.fixture(autouse=True)
+def _no_search_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unpinned router asks SearXNG whether it is there. `make test` makes no
+    network calls, and a closed port on Windows takes about a second to refuse,
+    so every test sees Errand as absent unless it says otherwise."""
+    from tools import errand
+
+    monkeypatch.setattr(errand, "available", lambda client=None: False)
+
+
 def _urls() -> tuple[URL, URL, URL]:
     """(maintenance, test read-write, test read-only).
 

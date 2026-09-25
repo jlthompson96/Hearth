@@ -66,7 +66,12 @@ def client() -> TestClient:
 
 def _script(*events: Event) -> object:
     def _fake(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: object = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         _fake.seen = (question, today)  # type: ignore[attr-defined]
         yield from events
@@ -174,7 +179,12 @@ def test_an_exception_mid_stream_becomes_an_error_event(
     silently looking finished is the worst of the options."""
 
     def _explodes(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: object = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         yield TokenEvent("starting")
         raise RuntimeError("LM Studio went away")
@@ -257,7 +267,12 @@ def test_the_agent_defaults_to_routing_and_is_still_selectable(
     seen: list[object] = []
 
     def _capture(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: object = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         seen.append(agent)
         yield DoneEvent()
@@ -282,7 +297,12 @@ def test_no_agent_routes_through_the_steward(
     seen: list[object] = []
 
     def _capture(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: object = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         seen.append(agent)
         yield DoneEvent()
@@ -302,7 +322,12 @@ def test_a_named_agent_still_bypasses_routing(
     seen: list[object] = []
 
     def _capture(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: object = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         seen.append(agent)
         yield DoneEvent()
@@ -435,7 +460,12 @@ def test_an_answer_that_failed_is_not_stored_but_the_question_is(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore
 ) -> None:
     def _explodes(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: object = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         yield TokenEvent("half an ans")
         raise RuntimeError("LM Studio went away")

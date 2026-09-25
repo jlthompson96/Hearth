@@ -33,7 +33,6 @@ import json
 import logging
 import uuid
 from collections.abc import Generator, Iterator, Sequence
-from contextvars import ContextVar
 from decimal import Decimal
 from enum import StrEnum
 
@@ -63,7 +62,6 @@ from steward import graph as steward
 
 router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger("hearth")
-_thread_id: ContextVar[uuid.UUID | None] = ContextVar("chat_thread_id", default=None)
 
 
 class Agent(StrEnum):
@@ -136,10 +134,13 @@ def _events(
     today: dt.date,
     detail: Detail = "normal",
     history: Sequence[Exchange] = (),
+    thread_id: uuid.UUID | None = None,
 ) -> Iterator[Event]:
     if agent is None:
+        # The thread is passed for Errand's audit row, which names the thread a
+        # search was made from.
         return steward.answer(
-            message, today=today, detail=detail, history=history, thread_id=_thread_id.get()
+            message, today=today, detail=detail, history=history, thread_id=thread_id
         )
     answer = tally.answer if agent is Agent.tally else forge.answer
     return answer(message, today=today, detail=detail, history=history)
@@ -199,39 +200,41 @@ def _turn(
     refusal: str | None = None
     results: list[str] = []
     try:
-        _thread_id.set(thread_id)
-        try:
-            for item in _events(request.agent, request.message, today, request.detail, history):
-                match item:
-                    case TokenEvent(text=text, provisional=provisional):
-                        if not provisional:
-                            answer.append(text)
-                        yield _sse("token", {"text": text, "provisional": provisional})
-                    case ToolEvent(name=name, args=args):
-                        tools.append({"name": name, "args": args})
-                        yield _sse("tool", {"name": name, "args": args})
-                    case ToolResultEvent(name=name, result=result):
-                        results.append(result)
-                        if tools:
-                            tools[-1]["result"] = result
-                        yield _sse("tool_result", {"name": name, "result": result})
-                    case RoutedEvent(destination=destination, confidence=sure, router=name):
-                        agent, confidence = destination, Decimal(str(sure)).quantize(
-                            Decimal("0.001")
-                        )
-                        yield _sse(
-                            "routed",
-                            {"destination": destination, "confidence": sure, "router": name},
-                        )
-                    case RefusedEvent(signal=signal, message=text):
-                        refusal = text
-                        yield _sse("refused", {"signal": signal, "message": text})
-                    case DoneEvent(reason=reason):
-                        yield _sse("done", {"reason": reason})
-                    case LogEvent(entry=entry):
-                        log.append(entry)
-        finally:
-            pass
+        events = _events(request.agent, request.message, today, request.detail, history, thread_id)
+        for item in events:
+            match item:
+                case TokenEvent(text=text, provisional=provisional):
+                    if not provisional:
+                        answer.append(text)
+                    yield _sse("token", {"text": text, "provisional": provisional})
+                case ToolEvent(name=name, args=args):
+                    tools.append({"name": name, "args": args})
+                    yield _sse("tool", {"name": name, "args": args})
+                case ToolResultEvent(name=name, result=result):
+                    results.append(result)
+                    # The loop yields each result straight after its call.
+                    if tools:
+                        tools[-1]["result"] = result
+                    yield _sse("tool_result", {"name": name, "result": result})
+                case RoutedEvent(destination=destination, confidence=sure, router=name):
+                    agent, confidence = destination, Decimal(str(sure)).quantize(Decimal("0.001"))
+                    # Sent before the specialist runs, so the UI can attribute
+                    # an answer while it is still streaming.
+                    yield _sse(
+                        "routed",
+                        {"destination": destination, "confidence": sure, "router": name},
+                    )
+                case RefusedEvent(signal=signal, message=text):
+                    refusal = text
+                    # Its own event, not a token stream: a refusal is a
+                    # different kind of outcome from an answer and the client,
+                    # the evals and any future audit all need to tell them
+                    # apart without reading the prose.
+                    yield _sse("refused", {"signal": signal, "message": text})
+                case DoneEvent(reason=reason):
+                    yield _sse("done", {"reason": reason})
+                case LogEvent(entry=entry):
+                    log.append(entry)
     except Exception as error:  # noqa: BLE001 - the stream is the only channel back
         # A traceback cannot reach the client through an open SSE stream, and a
         # silently truncated one looks to the UI exactly like a finished answer.

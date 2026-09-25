@@ -12,11 +12,11 @@ here would be a hardcoded model name by another route (CLAUDE.md, Stack).
 import ipaddress
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # hide_input_in_errors: a rejected DATABASE_URL would otherwise be printed in
 # full by the validation error — password included.
@@ -72,6 +72,11 @@ class Settings(BaseSettings):
 
     # Errand's door. Localhost only — anything else violates rule 5.
     searxng_url: str = "http://localhost:8080"
+    # Words no search may contain, comma-separated: a surname, a street, an
+    # employer. Matched as whole words, case ignored. Account labels are not
+    # added automatically — "Brokerage" or "Checking" would refuse ordinary
+    # searches, and a filter that refuses ordinary searches gets switched off.
+    search_blocked_terms: Annotated[list[str], NoDecode] = []
 
     # Real CSVs live outside the repo. Unset until Phase 2 needs it.
     hearth_data_dir: Path | None = None
@@ -80,6 +85,13 @@ class Settings(BaseSettings):
     @classmethod
     def _local(cls, url: str) -> str:
         return local_only(url)
+
+    @field_validator("search_blocked_terms", mode="before")
+    @classmethod
+    def _comma_separated(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [term.strip() for term in value.split(",") if term.strip()]
+        return value
 
 
 class ModelSettings(BaseSettings):

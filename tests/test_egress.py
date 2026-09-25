@@ -36,3 +36,26 @@ def test_configured_identifiers_are_rejected() -> None:
 
 def test_empty_identifiers_are_ignored() -> None:
     validate_search_query("ordinary search", identifiers=("",))
+
+
+def test_identifiers_match_whole_words_only() -> None:
+    """A filter that refuses ordinary searches gets switched off by the person
+    it protects."""
+    validate_search_query("pole vaulting results", identifiers=("vault",))
+    with pytest.raises(EgressViolation):
+        validate_search_query("Vault opening hours", identifiers=("vault",))
+
+
+@pytest.mark.parametrize(
+    ("query", "what"),
+    [
+        ("what can I buy with $38,250", "an amount of money"),
+        ("compare returns on 10000 dollars", "a number four or more digits long"),
+    ],
+)
+def test_a_violation_says_what_kind_of_thing_without_the_value(query: str, what: str) -> None:
+    with pytest.raises(EgressViolation) as refused:
+        validate_search_query(query)
+
+    assert refused.value.what == what
+    assert "38" not in refused.value.what and "10000" not in refused.value.what

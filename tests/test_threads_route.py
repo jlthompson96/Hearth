@@ -34,7 +34,12 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> TestClient:
     monkeypatch.setattr(titles, "for_question", lambda question, **_: "Back squat progress")
 
     def _answer(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: object = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         yield RoutedEvent(destination="forge", confidence=0.87, router="constrained-json")
         yield ToolEvent("lift_progression", {"exercise": "back squat"})
@@ -148,7 +153,12 @@ def _capturing(monkeypatch: pytest.MonkeyPatch, *events: Event) -> dict[str, Any
     seen: dict[str, Any] = {}
 
     def _answer(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: Any = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: Any = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         seen["history"] = list(history)
         yield from events or (TokenEvent("ok"), DoneEvent())

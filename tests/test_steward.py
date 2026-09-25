@@ -11,13 +11,23 @@ actually make them, and the edge still stops it.
 import datetime as dt
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
+import httpx
 import pytest
 
-from agents.loop import DoneEvent, Event, TokenEvent, ToolEvent, ToolResultEvent
-from steward.graph import DECLINED, HALTED, MAX_HOPS, answer, build
+from agents.loop import DoneEvent, Event, RefusedEvent, TokenEvent, ToolEvent, ToolResultEvent
+from steward.graph import (
+    DECLINED,
+    EGRESS_REFUSED,
+    HALTED,
+    MAX_HOPS,
+    SEARCH_UNAVAILABLE,
+    answer,
+    build,
+)
 from steward.router import Destination, Routed
 
 TODAY = dt.date(2026, 9, 20)
@@ -213,11 +223,77 @@ def test_errand_branch_calls_search_and_streams_untrusted_results(
     assert seen == {"query": "what is the weather tomorrow", "thread_id": thread_id}
     assert any(isinstance(event, ToolEvent) and event.name == "search" for event in events)
     assert any(
-        isinstance(event, ToolResultEvent)
-        and event.result.startswith("UNTRUSTED SEARCH RESULTS")
+        isinstance(event, ToolResultEvent) and event.result.startswith("UNTRUSTED SEARCH RESULTS")
         for event in events
     )
-    assert any(isinstance(event, DoneEvent) and event.reason == "errand" for event in events)
+    # "complete": the UI shows any other reason as an error, and a search that
+    # worked is not one.
+    assert events[-1] == DoneEvent()
+
+
+def test_a_search_that_would_leak_a_balance_is_refused_and_nothing_is_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase 9's exit criterion through the graph, with the real `search`: the
+    egress check raises before any request, the attempt is audited, and the
+    person is told what kind of thing stopped it — never the value."""
+    import tools.errand as errand
+
+    audit: list[dict[str, object]] = []
+    monkeypatch.setattr(errand, "_audit", lambda **values: audit.append(values))
+    monkeypatch.setattr(
+        errand,
+        "get_settings",
+        lambda: SimpleNamespace(searxng_url="http://search", search_blocked_terms=[]),
+    )
+
+    def _no_http(*args: object, **kwargs: object) -> None:
+        raise AssertionError("a refused search reached HTTP")
+
+    monkeypatch.setattr("tools.errand.httpx.Client", _no_http)
+
+    events = list(
+        answer(
+            "I have $38,250 saved — what can that buy me?",
+            today=TODAY,
+            graph=build(router=FixedRouter(Destination.errand), specialists={}),
+        )
+    )
+
+    refused = [e for e in events if isinstance(e, RefusedEvent)]
+    assert len(refused) == 1
+    assert refused[0].signal == "egress"
+    assert refused[0].message == EGRESS_REFUSED.format(what="an amount of money")
+    assert "38" not in refused[0].message
+    assert not any(isinstance(e, (ToolEvent, TokenEvent)) for e in events)
+    assert audit == [
+        {
+            "query": "I have $38,250 saved — what can that buy me?",
+            "allowed": False,
+            "violation": "currency amount in search query",
+            "thread_id": None,
+        }
+    ]
+
+
+def test_a_search_engine_that_stops_answering_ends_the_turn_plainly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _down(query: str, *, thread_id: object = None) -> None:
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr("steward.graph.errand_search", _down)
+    events = list(
+        answer(
+            "who won the game last night",
+            today=TODAY,
+            graph=build(router=FixedRouter(Destination.errand), specialists={}),
+        )
+    )
+
+    said, done = events[-2:]
+    assert isinstance(said, TokenEvent) and said.text == SEARCH_UNAVAILABLE
+    assert isinstance(done, DoneEvent) and done.reason == "search failed: ConnectError"
 
 
 @pytest.mark.parametrize("destination", [Destination.tally, Destination.forge])

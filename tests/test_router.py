@@ -16,6 +16,7 @@ from collections import Counter
 
 import httpx
 import pytest
+from langchain_core.messages import AIMessage
 from pydantic import ValidationError
 
 from config import get_model_settings
@@ -23,20 +24,28 @@ from evals import runner
 from steward import router as router_module
 from steward.router import (
     DESCRIPTIONS,
+    RECORDS_ONLY_UNSUPPORTED,
     ConstrainedJSONRouter,
     Decision,
     Destination,
     Routed,
     Router,
+    decision_schema,
     system_prompt,
 )
 
 #: The routing slice of the shared case file. Phase 6's twenty cases live there
 #: now rather than in a file of their own, so there is one place to add a case.
 #: The follow-ups (`route-followup-*`), which mostly carry an earlier exchange,
-#: are a set of their own and measured by `make eval`.
+#: are a set of their own and measured by `make eval`, as are the cases run with
+#: Errand offered — Phase 6's twenty are measured without it, as they were.
 _ALL, _TODAY, RUNS = runner.load()
-CASES = [c for c in _ALL if c.kind == "routing" and not c.id.startswith("route-followup-")]
+CASES = [
+    c
+    for c in _ALL
+    if c.kind == "routing" and not c.id.startswith("route-followup-") and not c.with_errand
+]
+ERRAND_CASES = [c for c in _ALL if c.kind == "routing" and c.with_errand]
 
 
 # --- no model needed ----------------------------------------------------------
@@ -78,8 +87,80 @@ def test_the_prompt_names_every_destination() -> None:
         assert DESCRIPTIONS[destination][:24] in prompt
 
 
-def test_errand_is_a_served_destination() -> None:
-    assert Destination.errand.value in {d.value for d in Destination}
+def test_without_errand_the_router_is_never_shown_it() -> None:
+    """A destination the router can pick but nothing can serve is worse than one
+    it is never shown. Not offered, Errand is absent from the prompt, and
+    `unsupported` takes the world back, in the words Phase 6 measured."""
+    prompt = system_prompt(with_errand=False)
+
+    assert "errand" not in prompt.lower()
+    assert f"- unsupported: {RECORDS_ONLY_UNSUPPORTED}" in prompt
+    assert "What is a good price for a squat rack" in prompt
+
+
+def test_with_errand_the_world_goes_to_it() -> None:
+    prompt = system_prompt(with_errand=True)
+
+    assert f"- errand: {DESCRIPTIONS[Destination.errand]}" in prompt
+    assert RECORDS_ONLY_UNSUPPORTED not in prompt
+
+
+def test_without_errand_the_schema_cannot_choose_it() -> None:
+    """Constrained decoding is the code half of not offering it: the model
+    cannot return a destination the schema does not contain."""
+    records_only = decision_schema(with_errand=False)
+
+    with pytest.raises(ValidationError):
+        records_only.model_validate({"destination": "errand", "confidence": 1.0})
+    records_only.model_validate({"destination": "unsupported", "confidence": 1.0})
+    decision_schema(with_errand=True).model_validate({"destination": "errand", "confidence": 1.0})
+
+
+def test_without_errand_the_schema_is_the_one_phase_6_measured() -> None:
+    """Pydantic sends an enum's docstring to the model inside the schema, so the
+    measured wording is pinned. Rewording it is a prompt change."""
+    schema = decision_schema(with_errand=False).model_json_schema()
+
+    assert schema["title"] == "Decision"
+    assert schema["$defs"]["Destination"]["enum"] == ["tally", "forge", "unsupported"]
+    assert "`errand` joins at Phase 9" in schema["$defs"]["Destination"]["description"]
+
+
+@pytest.mark.parametrize("up", [True, False])
+def test_an_unpinned_router_asks_whether_errand_is_there(
+    monkeypatch: pytest.MonkeyPatch, up: bool
+) -> None:
+    seen: dict[str, object] = {}
+
+    class _Model:
+        def invoke(self, messages: list[tuple[str, str]]) -> dict[str, object]:
+            seen["system"] = messages[0][1]
+            decision = Decision(destination=Destination.unsupported, confidence=0.9)
+            raw = AIMessage(content=decision.model_dump_json())
+            return {"raw": raw, "parsed": decision, "parsing_error": None}
+
+    def _structured(schema: object, **kwargs: object) -> _Model:
+        seen["schema"] = schema
+        return _Model()
+
+    monkeypatch.setattr("tools.errand.available", lambda: up)
+    monkeypatch.setattr(router_module, "structured_reply", _structured)
+
+    ConstrainedJSONRouter().route("what is the weather tomorrow")
+
+    assert seen["schema"] is decision_schema(with_errand=up)
+    assert ("- errand:" in str(seen["system"])) is up
+
+
+def test_the_errand_cases_cover_every_destination() -> None:
+    """Offering a search must not pull records away from the specialists, so the
+    Errand set asks about records too."""
+    labels = Counter(case.expect for case in ERRAND_CASES)
+
+    assert labels[Destination.errand.value] >= 4
+    assert labels[Destination.unsupported.value] >= 2
+    assert labels[Destination.tally.value] >= 1
+    assert labels[Destination.forge.value] >= 1
 
 
 def test_the_decision_schema_rejects_an_invented_destination() -> None:
@@ -142,10 +223,12 @@ def test_descriptions_beat_bare_labels(_endpoint: str, monkeypatch: pytest.Monke
     fallback is not needed. If accuracy holds without them, the hypothesis was
     wrong and this test is how anyone finds that out.
     """
-    with_descriptions, _, _ = _measure(ConstrainedJSONRouter())
+    # Without Errand, as Phase 6 measured it.
+    with_descriptions, _, _ = _measure(ConstrainedJSONRouter(with_errand=False))
 
     monkeypatch.setitem(router_module.__dict__, "DESCRIPTIONS", {d: d.value for d in Destination})
-    bare, _, _ = _measure(ConstrainedJSONRouter())
+    monkeypatch.setattr(router_module, "RECORDS_ONLY_UNSUPPORTED", Destination.unsupported.value)
+    bare, _, _ = _measure(ConstrainedJSONRouter(with_errand=False))
 
     total = len(CASES) * RUNS
     print(

@@ -26,12 +26,13 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from openai import ContentFilterFinishReasonError, LengthFinishReasonError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 from agents.conversation import Exchange, last_line
 from agents.loop import load_prompt
 from llm import structured_reply
 from modellog import Clock, LogEntry, request_body, response_body, tokens
+from tools import errand
 
 
 class Destination(StrEnum):
@@ -42,8 +43,11 @@ class Destination(StrEnum):
     whichever specialist sounds closest, which is how a finance agent ends up
     answering questions about the weather with a tool call.
 
-        `errand` is the one tool allowed to look outside the recorded data. It is
-        a direct one-call branch, not a reasoning specialist.
+    `errand` is the one tool allowed to look outside the recorded data — a
+    direct one-call branch, not a reasoning specialist. It is offered only
+    while SearXNG answers: a destination the router can pick but nothing can
+    serve is worse than one it is never shown. Not offered, the prompt and the
+    schema are the ones Phase 6 measured, word for word.
     """
 
     tally = "tally"
@@ -80,12 +84,58 @@ DESCRIPTIONS: dict[Destination, str] = {
     ),
 }
 
+#: `unsupported` when Errand is not offered: everything outside the records,
+#: the world included. This is the wording Phase 6 measured at 60/60.
+RECORDS_ONLY_UNSUPPORTED = (
+    "anything that is not reading back their own records: advice about what "
+    "they should do or buy, whether a decision is wise, prices or costs of "
+    "things in the world, general knowledge, news, weather, other people. "
+    "A question can be about money or training and still belong here when "
+    "answering it would need information their records do not contain"
+)
+
+
+def offered(with_errand: bool) -> tuple[Destination, ...]:
+    return tuple(d for d in Destination if with_errand or d is not Destination.errand)
+
 
 class Decision(BaseModel):
     """The classifier's output. Constrained so the model cannot return prose."""
 
     destination: Destination
     confidence: float = Field(ge=0.0, le=1.0)
+
+
+#: The same schema without `errand`, named as the full one is, so the request
+#: LM Studio constrains decoding to is the one Phase 6 measured. Constrained,
+#: the model cannot choose a destination it was not offered.
+_RecordsOnly = StrEnum(  # type: ignore[misc]
+    "Destination", {d.name: d.value for d in offered(with_errand=False)}
+)
+# Pydantic puts an enum's docstring into the JSON schema, so this text is sent
+# to the model with every routing call. It is the docstring Phase 6 measured,
+# kept word for word — stale as it reads — because rewording it is a prompt
+# change, and a prompt change is measured before it is made.
+_RecordsOnly.__doc__ = """Where a turn can go.
+
+`unsupported` is a destination rather than a failure mode. Without it the
+classifier has to put "what's the weather" somewhere, and it will — into
+whichever specialist sounds closest, which is how a finance agent ends up
+answering questions about the weather with a tool call.
+
+`errand` joins at Phase 9. It is deliberately absent rather than stubbed:
+a destination the router can pick but nothing can serve is worse than one
+that does not exist yet."""
+RecordsOnlyDecision: type[BaseModel] = create_model(
+    "Decision",
+    __doc__=Decision.__doc__,
+    destination=(_RecordsOnly, ...),
+    confidence=(float, Field(ge=0.0, le=1.0)),
+)
+
+
+def decision_schema(with_errand: bool) -> type[BaseModel]:
+    return Decision if with_errand else RecordsOnlyDecision
 
 
 @dataclass(frozen=True)
@@ -115,12 +165,23 @@ class Router(Protocol):
     def route(self, question: str, previous: Exchange | None = None) -> Routed: ...
 
 
-def _destination_lines() -> str:
-    return "\n".join(f"- {d.value}: {DESCRIPTIONS[d]}" for d in Destination)
+def _description(destination: Destination, with_errand: bool) -> str:
+    if destination is Destination.unsupported and not with_errand:
+        return RECORDS_ONLY_UNSUPPORTED
+    return DESCRIPTIONS[destination]
 
 
-def system_prompt() -> str:
-    return load_prompt("steward").format(destinations=_destination_lines())
+def _destination_lines(with_errand: bool) -> str:
+    return "\n".join(f"- {d.value}: {_description(d, with_errand)}" for d in offered(with_errand))
+
+
+def system_prompt(with_errand: bool = True) -> str:
+    """What the router is told. Where a question about the world goes is the
+    one paragraph that depends on whether Errand is there to take it."""
+    outside = load_prompt("steward/with_errand" if with_errand else "steward/records_only")
+    return load_prompt("steward").format(
+        destinations=_destination_lines(with_errand), outside_records=outside.rstrip("\n")
+    )
 
 
 def message(question: str, previous: Exchange | None) -> str:
@@ -178,18 +239,27 @@ _UNREADABLE = (ValueError, LengthFinishReasonError, ContentFilterFinishReasonErr
 
 
 class ConstrainedJSONRouter:
-    """The default. One constrained-JSON call, no tool calling, retried once."""
+    """The default. One constrained-JSON call, no tool calling, retried once.
+
+    `with_errand` pins whether Errand is offered; None asks SearXNG, once a
+    minute at most. The evals pin it, so a case measures one prompt whether or
+    not a search engine happens to be running.
+    """
 
     name = "constrained-json"
 
-    def __init__(self, *, temperature: float = 0.0) -> None:
+    def __init__(self, *, temperature: float = 0.0, with_errand: bool | None = None) -> None:
         self._temperature = temperature
+        self._with_errand = with_errand
 
     def route(self, question: str, previous: Exchange | None = None) -> Routed:
+        with_errand = errand.available() if self._with_errand is None else self._with_errand
         model = structured_reply(
-            Decision, temperature=self._temperature, reasoning_effort=REASONING_EFFORT
+            decision_schema(with_errand),
+            temperature=self._temperature,
+            reasoning_effort=REASONING_EFFORT,
         )
-        asked = [("system", system_prompt()), ("human", message(question, previous))]
+        asked = [("system", system_prompt(with_errand)), ("human", message(question, previous))]
         body = request_body(model, asked)
         log: list[LogEntry] = []
         failure: Exception | None = None
@@ -220,7 +290,7 @@ class ConstrainedJSONRouter:
             if decision is None:
                 continue
             return Routed(
-                destination=decision.destination,
+                destination=Destination(decision.destination.value),
                 confidence=decision.confidence,
                 router=self.name,
                 log=tuple(log),

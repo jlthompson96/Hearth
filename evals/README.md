@@ -51,6 +51,14 @@ carry it: a refusal that holds two times in three is not a refusal, and a route
 that lands correctly two times in three sends every third question to the wrong
 agent.
 
+## Errand is pinned, not probed
+
+In the app the router is offered Errand only while SearXNG answers. In the evals a
+case says which router it measures: `with_errand: true` offers it, and every other
+case runs without it — the prompt and schema Phase 6 measured, word for word. So a
+result does not depend on whether a search engine happened to be running, and the
+`route-errand-*` cases measure the other prompt on purpose.
+
 ## The database
 
 Evals run against `hearth_eval`, a database of their own, dropped and rebuilt

@@ -27,9 +27,7 @@ def entries(
     before: dt.datetime | None = None,
 ) -> list[AuditEntry]:
     """Return audit entries newest first, with timestamp pagination."""
-    query = sa.select(SearchAudit).order_by(
-        SearchAudit.created_at.desc(), SearchAudit.id.desc()
-    )
+    query = sa.select(SearchAudit).order_by(SearchAudit.created_at.desc(), SearchAudit.id.desc())
     if before is not None:
         query = query.where(SearchAudit.created_at < before)
     rows = conn.execute(query.limit(limit)).scalars().all()

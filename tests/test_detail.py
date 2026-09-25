@@ -72,7 +72,12 @@ def seen(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             pass
 
     def _events(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: object = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: object = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         captured["agent"], captured["detail"] = agent, detail
         yield TokenEvent("ok")

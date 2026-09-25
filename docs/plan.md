@@ -340,7 +340,7 @@ model across a near tie. Until that is pinned down, a one-case delta between ful
 not evidence; an interleaved A/B on the cases in question is, and is how the offer wording
 above was settled.
 
-## Phase 9 — Errand and egress (2)
+## Phase 9 — Errand and egress (2) — BUILT; waiting on SearXNG to run somewhere
 
 SearXNG with JSON format enabled and limiter relaxed. `SearxSearchWrapper`.
 `validate_search_query()` rejecting currency amounts, 4+ digit numbers and configured
@@ -352,6 +352,36 @@ identifiers. `search_audit` table. Audit view in the UI.
 Known gotchas: SearXNG returns HTML by default — enable JSON in `settings.yml` and restart,
 or every request 403s. Its bot limiter throttles agents; relax it in `limiter.toml`, safe
 because the instance is private.
+
+**Addendum, 2026-09-25: built ahead of its search engine, then made safe to be.** The code
+landed in `0560d5d` — `tools/errand.py` over plain `httpx` rather than
+`SearxSearchWrapper`, the audit table and its screen, and `errand` as a router destination.
+It also left `make test` red and moved the router: the descriptions sent world questions
+to Errand while three of Phase 6's labelled cases still expected `unsupported`, and with
+SearXNG not running on this machine a weather question became a connection error after
+routing. Fixed the same day:
+
+- **Errand is offered only while SearXNG answers.** The router probes `/healthz` — no
+  query, so no egress — at most once a minute, and a failed search withdraws Errand until
+  the next probe. Not offered, the router's prompt *and* schema are byte-identical to the
+  ones Phase 6 measured, checked against the pre-Errand commit. The schema was the
+  surprise: pydantic sends an enum's docstring to the model inside the JSON schema, so
+  `0560d5d` had changed a measured prompt by editing a docstring. The measured one is
+  pinned.
+- **A blocked search is a refusal, not a crash** — a `refused` event with signal `egress`,
+  naming the kind of thing that tripped it and never the value, with the audit row
+  written and no request made. A search engine that stops answering gets a sentence.
+- **Private terms are applied inside `search()`**, from `SEARCH_BLOCKED_TERMS`, whatever a
+  caller passes; the graph passed none. Whole words only. Account labels were considered
+  and left out: "Brokerage" and "Checking" would refuse ordinary searches.
+- **Measured on the host, three runs each:** Phase 6's twenty without Errand 60/60; the
+  follow-ups 21/24, the one miss being the known training-advice case; nine new cases with
+  Errand offered 27/27 — weather, sports, prices and "the world record bench press" go to
+  Errand, advice still goes to `unsupported`, and a record question still goes to its
+  specialist.
+
+What remains is SearXNG itself, which has no Docker to run in here, and an end-to-end
+exit test against it.
 
 ## Phase 10 — RAG (3) — BLOCKED on pgvector on the host
 

@@ -251,7 +251,12 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> TestClient:
 
 def _script(*events: Event) -> Any:
     def _answer(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: Any = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: Any = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         yield from events
 
@@ -300,7 +305,12 @@ def test_a_turn_that_failed_keeps_its_log(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def _fails(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: Any = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: Any = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         yield LogEvent(_entry("step", "tally", 50, error="ConnectionError: gone"))
         raise ConnectionError("gone")
@@ -329,7 +339,12 @@ def test_a_turn_abandoned_mid_answer_keeps_its_log(
         yield conn
 
     def _slow(
-        agent: object, question: str, today: dt.date, detail: str = "normal", history: Any = ()
+        agent: object,
+        question: str,
+        today: dt.date,
+        detail: str = "normal",
+        history: Any = (),
+        thread_id: object = None,
     ) -> Iterator[Event]:
         yield LogEvent(_entry("route", "steward", 400))
         yield TokenEvent("half an ans")

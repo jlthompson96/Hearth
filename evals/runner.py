@@ -34,6 +34,7 @@ from agents.loop import (
 )
 from scripts.seed import YEAR
 from steward import graph as steward
+from steward.router import ConstrainedJSONRouter
 
 EVALS = Path(__file__).resolve().parent
 CASES_PATH = EVALS / "cases.yaml"
@@ -62,6 +63,10 @@ class Case:
     #: Earlier exchanges in the thread, scripted rather than generated: a
     #: follow-up case measures the follow-up, not the turn before it as well.
     history: tuple[Exchange, ...] = ()
+    #: Whether the router is offered Errand. Pinned rather than probed, so a
+    #: case measures one prompt whether or not SearXNG happens to be running.
+    #: Off, the router's prompt and schema are the ones Phase 6 measured.
+    with_errand: bool = False
     #: Present in the file for a reader; carried so it reaches the results.
     note: str | None = None
 
@@ -122,7 +127,10 @@ def _answer(case: Case, today: dt.date) -> Iterator[Event]:
     failure from looking identical from outside.
     """
     if case.agent is None:
-        return steward.answer(case.question, today=today, detail=case.detail, history=case.history)
+        graph = steward.build(router=ConstrainedJSONRouter(with_errand=case.with_errand))
+        return steward.answer(
+            case.question, today=today, detail=case.detail, history=case.history, graph=graph
+        )
     return SPECIALISTS[case.agent](
         case.question, today=today, detail=case.detail, history=case.history
     )
@@ -157,9 +165,8 @@ def _text_and_tools(
 def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
     """(passed, why not)."""
     if case.kind == "routing":
-        from steward.router import ConstrainedJSONRouter
-
-        routed = ConstrainedJSONRouter().route(case.question, previous(case.history))
+        router = ConstrainedJSONRouter(with_errand=case.with_errand)
+        routed = router.route(case.question, previous(case.history))
         got = routed.destination.value
         return got == case.expect, f"routed to {got}, wanted {case.expect}"
 

@@ -34,6 +34,7 @@ from collections.abc import Iterator, Sequence
 from typing import Any, TypedDict
 from uuid import UUID
 
+import httpx
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
@@ -51,6 +52,7 @@ from agents.loop import (
     ToolResultEvent,
 )
 from steward.router import ConstrainedJSONRouter, Destination, Router, RoutingError
+from tools.errand import EgressViolation
 from tools.errand import search as errand_search
 
 #: Phase 6: an adversarial delegation-loop prompt must terminate within 6 hops.
@@ -82,6 +84,19 @@ DECLINED = (
     "do not contain."
 )
 
+#: Said when a search is refused by the egress check (rule 5). It names the
+#: kind of thing that tripped it, never the value, and says nothing was sent.
+EGRESS_REFUSED = (
+    "I didn't run that search: it contains {what}, and a search is the one thing "
+    "that leaves this machine. Nothing was sent. Ask again without it."
+)
+
+#: Said when SearXNG was offered to the router but did not answer the search.
+SEARCH_UNAVAILABLE = (
+    "I couldn't search for that — the search service didn't answer. Nothing "
+    "about your records was sent anywhere."
+)
+
 
 class StewardState(TypedDict, total=False):
     question: str
@@ -101,6 +116,30 @@ class StewardState(TypedDict, total=False):
 def _emit(event: Event) -> None:
     """Push an event to whoever is streaming this run."""
     get_stream_writer()(event)
+
+
+def _errand(question: str, thread_id: UUID | None) -> None:
+    """One search, no model. The question is the query as typed — nothing a
+    model wrote — and the egress check runs on it inside `search`, which also
+    writes the audit row whether it is sent or refused.
+
+    A refused search is a refusal, not an error: the turn stopped on purpose,
+    and like every refusal it is never replayed to a model as context.
+    """
+    try:
+        result = errand_search(question, thread_id=thread_id)
+    except EgressViolation as violation:
+        _emit(RefusedEvent("egress", EGRESS_REFUSED.format(what=violation.what)))
+        return
+    except (httpx.HTTPError, ValueError) as failure:
+        _emit(TokenEvent(SEARCH_UNAVAILABLE))
+        _emit(DoneEvent(f"search failed: {type(failure).__name__}"))
+        return
+    _emit(ToolEvent("search", {"query": question}))
+    rendered = result.as_prompt_text()
+    _emit(ToolResultEvent("search", rendered))
+    _emit(TokenEvent(rendered))
+    _emit(DoneEvent())
 
 
 def build(router: Router | None = None, specialists: dict[str, Any] | None = None) -> Any:
@@ -146,12 +185,7 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
         destination = state["destination"]
         assert destination is not None
         if destination is Destination.errand:
-            result = errand_search(state["question"], thread_id=state.get("thread_id"))
-            _emit(ToolEvent("search", {"query": state["question"]}))
-            rendered = result.as_prompt_text()
-            _emit(ToolResultEvent("search", rendered))
-            _emit(TokenEvent(rendered))
-            _emit(DoneEvent("errand"))
+            _errand(state["question"], state.get("thread_id"))
             return {"handoff": False}
 
         answer = agents[destination.value]
