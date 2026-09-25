@@ -78,15 +78,13 @@ def test_the_prompt_names_every_destination() -> None:
         assert DESCRIPTIONS[destination][:24] in prompt
 
 
-def test_errand_is_not_a_destination_until_it_exists() -> None:
-    """A destination the router can pick but nothing can serve is worse than one
-    that is not there yet. Errand arrives with Phase 9."""
-    assert "errand" not in {d.value for d in Destination}
+def test_errand_is_a_served_destination() -> None:
+    assert Destination.errand.value in {d.value for d in Destination}
 
 
 def test_the_decision_schema_rejects_an_invented_destination() -> None:
     with pytest.raises(ValidationError):
-        Decision(destination="errand", confidence=1.0)
+        Decision(destination="invented", confidence=1.0)
 
     with pytest.raises(ValidationError):
         Decision(destination=Destination.tally, confidence=1.4)

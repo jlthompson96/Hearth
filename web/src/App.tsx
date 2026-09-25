@@ -25,6 +25,7 @@ import { Chat } from './Chat'
 import { Imports } from './Imports'
 import { ManualEntry } from './ManualEntry'
 import { ModelLog } from './ModelLog'
+import { SearchAudit } from './SearchAudit'
 import { Settings } from './Settings'
 import { Sidebar, type NavItem, type Health as SidebarHealth } from './Sidebar'
 import { ToastHost } from './toast'
@@ -44,6 +45,7 @@ const SCREENS = [
   { hash: '#/', name: 'Chat', icon: 'chat' },
   { hash: '#/imports', name: 'Data & imports', icon: 'data' },
   { hash: '#/entry', name: 'Manual entry', icon: 'entry' },
+  { hash: '#/audit', name: 'Egress audit', icon: 'log' },
   { hash: '#/log', name: 'Model log', icon: 'log' },
   { hash: '#/settings', name: 'Settings', icon: 'settings' },
 ] as const satisfies readonly NavItem[]
@@ -146,6 +148,9 @@ export function App() {
           </div>
           <div className="view" hidden={screen !== '#/entry'}>
             <ManualEntry active={screen === '#/entry'} />
+          </div>
+          <div className="view" hidden={screen !== '#/audit'}>
+            <SearchAudit active={screen === '#/audit'} />
           </div>
           <div className="view" hidden={screen !== '#/log'}>
             <ModelLog active={screen === '#/log'} />

@@ -1040,6 +1040,71 @@ mark.unverified {
 
 .legend { margin-top: 1rem; }
 
+/* --- egress audit ------------------------------------------------------------- */
+
+.audit-screen { padding: 1.5rem 0 2rem; }
+
+.audit-intro h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.audit-intro p { margin: 0; }
+
+.audit-table-wrap {
+  margin-top: 1.25rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--raised);
+  box-shadow: var(--shadow);
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.audit-table th,
+.audit-table td {
+  padding: 0.75rem 0.875rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.audit-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.audit-table tbody tr:last-child td { border-bottom: none; }
+
+.status-mark {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status-mark.allowed {
+  background: color-mix(in srgb, var(--up) 15%, transparent);
+  color: var(--up);
+}
+
+.status-mark.blocked {
+  background: color-mix(in srgb, var(--down) 15%, transparent);
+  color: var(--down);
+}
+
 /* --- model log ---------------------------------------------------------------- */
 
 .log-screen { padding: 1.5rem 0 2rem; }

@@ -12,10 +12,11 @@ import datetime as dt
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 import pytest
 
-from agents.loop import DoneEvent, Event, TokenEvent, ToolEvent
+from agents.loop import DoneEvent, Event, TokenEvent, ToolEvent, ToolResultEvent
 from steward.graph import DECLINED, HALTED, MAX_HOPS, answer, build
 from steward.router import Destination, Routed
 
@@ -182,6 +183,41 @@ def test_tool_events_survive_the_graph() -> None:
     tools = [e for e in events if isinstance(e, ToolEvent)]
     assert len(tools) == 1
     assert tools[0].args["start"] == "2026-01-01"
+
+
+def test_errand_branch_calls_search_and_streams_untrusted_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, object] = {}
+    thread_id = uuid4()
+
+    class FakeResults:
+        def as_prompt_text(self) -> str:
+            return "UNTRUSTED SEARCH RESULTS: a result"
+
+    def fake_search(query: str, *, thread_id: object = None) -> FakeResults:
+        seen["query"] = query
+        seen["thread_id"] = thread_id
+        return FakeResults()
+
+    monkeypatch.setattr("steward.graph.errand_search", fake_search)
+    events = list(
+        answer(
+            "what is the weather tomorrow",
+            today=TODAY,
+            thread_id=thread_id,
+            graph=build(router=FixedRouter(Destination.errand), specialists={}),
+        )
+    )
+
+    assert seen == {"query": "what is the weather tomorrow", "thread_id": thread_id}
+    assert any(isinstance(event, ToolEvent) and event.name == "search" for event in events)
+    assert any(
+        isinstance(event, ToolResultEvent)
+        and event.result.startswith("UNTRUSTED SEARCH RESULTS")
+        for event in events
+    )
+    assert any(isinstance(event, DoneEvent) and event.reason == "errand" for event in events)
 
 
 @pytest.mark.parametrize("destination", [Destination.tally, Destination.forge])

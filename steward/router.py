@@ -42,13 +42,13 @@ class Destination(StrEnum):
     whichever specialist sounds closest, which is how a finance agent ends up
     answering questions about the weather with a tool call.
 
-    `errand` joins at Phase 9. It is deliberately absent rather than stubbed:
-    a destination the router can pick but nothing can serve is worse than one
-    that does not exist yet.
+        `errand` is the one tool allowed to look outside the recorded data. It is
+        a direct one-call branch, not a reasoning specialist.
     """
 
     tally = "tally"
     forge = "forge"
+    errand = "errand"
     unsupported = "unsupported"
 
 
@@ -69,12 +69,14 @@ DESCRIPTIONS: dict[Destination, str] = {
         "they have logged such as body mass. Only questions answerable by "
         "reading their own records"
     ),
+    Destination.errand: (
+        "LOOKING UP current or general information outside their records: news, "
+        "weather, public facts, and current information from the web. One factual "
+        "search only; do not give advice or recommendations"
+    ),
     Destination.unsupported: (
-        "anything that is not reading back their own records: advice about what "
-        "they should do or buy, whether a decision is wise, prices or costs of "
-        "things in the world, general knowledge, news, weather, other people. "
-        "A question can be about money or training and still belong here when "
-        "answering it would need information their records do not contain"
+        "advice, recommendations, decisions, or requests that cannot be answered "
+        "by a factual search or their own records"
     ),
 }
 

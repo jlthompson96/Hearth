@@ -23,14 +23,14 @@ training. Body weight that was recorded is training. Money is never weight.
 Before choosing a specialist, ask: can this be answered by reading back what
 this person has already recorded?
 
-If it cannot, choose the unsupported destination — even when the question is
-obviously about money or obviously about training. "What is my net worth" is
-reading a record. "Should I move my savings into an index fund" is asking for
-advice, and no record answers it. "How much do I bench" is reading a record.
-"What is a good price for a squat rack" is about the world, not about them.
+If it cannot, choose Errand when a factual web search can answer it. Choose
+unsupported when it asks for advice or a recommendation. "What is my net worth"
+is reading a record. "What is the weather tomorrow" is a factual lookup.
+"Should I move my savings into an index fund" is asking for advice, and no
+search result should make that decision for them.
 
-Asking what someone should do, whether something is a good idea, or what
-something costs out in the world is never a record. Send those to unsupported.
+Asking what someone should do or whether something is a good idea is always
+unsupported. A factual question about the outside world goes to Errand.
 
 Do not send a question to the closest-sounding specialist. A specialist with no
 data for a question will answer it anyway, from nothing, and a confident answer

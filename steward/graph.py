@@ -32,6 +32,7 @@ than a guard against them.
 import datetime as dt
 from collections.abc import Iterator, Sequence
 from typing import Any, TypedDict
+from uuid import UUID
 
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
@@ -46,8 +47,11 @@ from agents.loop import (
     RefusedEvent,
     RoutedEvent,
     TokenEvent,
+    ToolEvent,
+    ToolResultEvent,
 )
 from steward.router import ConstrainedJSONRouter, Destination, Router, RoutingError
+from tools.errand import search as errand_search
 
 #: Phase 6: an adversarial delegation-loop prompt must terminate within 6 hops.
 #: A hop is one routing decision. The ordinary turn uses exactly one.
@@ -91,6 +95,7 @@ class StewardState(TypedDict, total=False):
     confidence: float
     router: str
     handoff: bool
+    thread_id: UUID | None
 
 
 def _emit(event: Event) -> None:
@@ -140,6 +145,15 @@ def build(router: Router | None = None, specialists: dict[str, Any] | None = Non
     def specialist(state: StewardState) -> StewardState:
         destination = state["destination"]
         assert destination is not None
+        if destination is Destination.errand:
+            result = errand_search(state["question"], thread_id=state.get("thread_id"))
+            _emit(ToolEvent("search", {"query": state["question"]}))
+            rendered = result.as_prompt_text()
+            _emit(ToolResultEvent("search", rendered))
+            _emit(TokenEvent(rendered))
+            _emit(DoneEvent("errand"))
+            return {"handoff": False}
+
         answer = agents[destination.value]
 
         handoff = False
@@ -205,6 +219,7 @@ def answer(
     today: dt.date,
     detail: Detail = "normal",
     history: Sequence[Exchange] = (),
+    thread_id: UUID | None = None,
     graph: Any | None = None,
 ) -> Iterator[Event]:
     """Route `question` and stream whatever the chosen specialist produces.
@@ -233,6 +248,7 @@ def answer(
         "detail": detail,
         "history": history,
         "hops": 0,
+        "thread_id": thread_id,
     }
 
     # `custom` carries exactly what the nodes wrote and nothing else — no
