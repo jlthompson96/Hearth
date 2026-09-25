@@ -1,15 +1,15 @@
-"""The `Normalizer` protocol: one per institution and export layout.
+"""The `Normalizer` protocol: one per source and export layout.
 
 A normalizer is chosen by exact header match and never by resemblance. It turns
 raw rows — the cells as they arrived, keyed by the export's own header — into
-snapshots. It reads rows, not files, so the same code runs on an import and on
-a re-normalization from `import_row` months later; that is what makes the raw
-rows a recovery path rather than an archive.
+snapshots or readings. It reads rows, not files, so the same code runs on an
+import and on a re-normalization from `import_row` months later; that is what
+makes the raw rows a recovery path rather than an archive.
 """
 
 import datetime as dt
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Protocol
 
@@ -35,10 +35,22 @@ class Holding:
 
 
 @dataclass(frozen=True)
+class BodyReading:
+    row: int
+    as_of: dt.date
+    #: In `ingest.measures.WEIGHT_UNIT`; the export states no unit of its own.
+    weight: Decimal
+
+
+@dataclass(frozen=True)
 class Normalized:
-    holdings: tuple[Holding, ...]
+    """What one export became. A positions export fills the first two, a
+    weight history the third; nothing yet fills both."""
+
+    holdings: tuple[Holding, ...] = ()
     #: Account name -> balance, in the order accounts first appear.
-    balances: Mapping[str, Decimal]
+    balances: Mapping[str, Decimal] = field(default_factory=dict)
+    body_weights: tuple[BodyReading, ...] = ()
 
 
 class Normalizer(Protocol):

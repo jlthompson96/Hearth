@@ -197,6 +197,29 @@ function FileRow({
 }
 
 function Imported({ outcome }: { outcome: ImportOutcome }) {
+  if (outcome.accounts.length === 0) {
+    // A weight history: no accounts, one weigh-in per day that had one.
+    const skipped = outcome.rows - outcome.body_weights
+    return (
+      <div className="imported">
+        <p className="imported-title">
+          {outcome.already_imported
+            ? `${outcome.filename} was already imported — nothing was written again.`
+            : `Imported ${outcome.body_weights} weigh-ins from ${outcome.filename}.`}
+        </p>
+        {skipped > 0 && (
+          <p className="muted small">
+            {skipped} {skipped === 1 ? 'day' : 'days'} had no weigh-in recorded and{' '}
+            {skipped === 1 ? 'was' : 'were'} skipped.
+          </p>
+        )}
+        <p className="muted small">
+          In pounds, as recorded. The moving average is kept with the raw rows and not used — ask
+          Forge about your body weight and it works from the weigh-ins.
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="imported">
       <p className="imported-title">

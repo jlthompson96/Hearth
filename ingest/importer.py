@@ -25,16 +25,24 @@ the atomicity of an import within it.
 import datetime as dt
 import hashlib
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
 import sqlalchemy as sa
 
-from db.models import Account, BalanceSnapshot, HoldingSnapshot, ImportBatch, ImportRow
+from db.models import (
+    Account,
+    BalanceSnapshot,
+    BodyMetric,
+    HoldingSnapshot,
+    ImportBatch,
+    ImportRow,
+)
 from ingest.errors import Conflict, DateMismatch, FixtureLoaded, NotFound, UnknownAccounts
 from ingest.export import normalizer_named, read_export
-from ingest.normalizer import RawRow
+from ingest.measures import BODY_WEIGHT, WEIGHT_UNIT
+from ingest.normalizer import BodyReading, Normalized, RawRow
 from scripts.seed import FIXTURE_ACCOUNT_IDS
 
 
@@ -54,6 +62,9 @@ class ImportResult:
     rows: int
     already_imported: bool
     accounts: tuple[AccountImported, ...]
+    #: Weigh-ins recorded, for a weight history. Fewer than `rows` when some
+    #: days carried no weigh-in.
+    body_weights: int = 0
 
 
 def fixture_loaded(conn: sa.Connection) -> bool:
@@ -140,25 +151,30 @@ def renormalize(conn: sa.Connection, batch_id: uuid.UUID) -> ImportResult:
         raise NotFound(f"no import batch {batch_id}")
 
     with conn.begin_nested():
-        conn.execute(sa.delete(HoldingSnapshot).where(HoldingSnapshot.batch_id == batch_id))
-        conn.execute(sa.delete(BalanceSnapshot).where(BalanceSnapshot.batch_id == batch_id))
+        _delete_normalized(conn, batch_id)
         _normalize(conn, batch_id)
     return _result(conn, batch_id, already_imported=False)
 
 
 def remove_import(conn: sa.Connection, batch_id: uuid.UUID) -> None:
-    """Take an import back out: its snapshots, its raw rows and the batch.
+    """Take an import back out: its snapshots or readings, its raw rows and
+    the batch.
 
-    The snapshots are deleted explicitly. Their foreign key is ON DELETE SET
-    NULL, so deleting the batch alone would leave them behind looking exactly
-    like figures entered by hand.
+    What it normalized into is deleted explicitly. Those foreign keys are ON
+    DELETE SET NULL, so deleting the batch alone would leave every figure behind
+    looking exactly like one entered by hand.
     """
     with conn.begin_nested():
-        conn.execute(sa.delete(HoldingSnapshot).where(HoldingSnapshot.batch_id == batch_id))
-        conn.execute(sa.delete(BalanceSnapshot).where(BalanceSnapshot.batch_id == batch_id))
+        _delete_normalized(conn, batch_id)
         deleted = conn.execute(sa.delete(ImportBatch).where(ImportBatch.id == batch_id))
         if deleted.rowcount == 0:
             raise NotFound(f"no import batch {batch_id}")
+
+
+def _delete_normalized(conn: sa.Connection, batch_id: uuid.UUID) -> None:
+    conn.execute(sa.delete(HoldingSnapshot).where(HoldingSnapshot.batch_id == batch_id))
+    conn.execute(sa.delete(BalanceSnapshot).where(BalanceSnapshot.batch_id == batch_id))
+    conn.execute(sa.delete(BodyMetric).where(BodyMetric.batch_id == batch_id))
 
 
 def _normalize(conn: sa.Connection, batch_id: uuid.UUID) -> None:
@@ -175,15 +191,27 @@ def _normalize(conn: sa.Connection, batch_id: uuid.UUID) -> None:
     ]
     normalized = normalizer_named(batch.normalizer).normalize(rows)
 
+    if normalized.body_weights:
+        _body_weights(conn, normalized.body_weights, batch.as_of, batch_id)
+    if normalized.balances:
+        _snapshots(conn, normalized, batch.as_of, batch_id)
+    conn.execute(
+        sa.update(ImportBatch).where(ImportBatch.id == batch_id).values(status="normalized")
+    )
+
+
+def _snapshots(
+    conn: sa.Connection, normalized: Normalized, as_of: dt.date, batch_id: uuid.UUID
+) -> None:
     accounts = _account_ids(conn, normalized.balances)
-    _refuse_conflicts(conn, accounts, batch.as_of, batch_id)
+    _refuse_conflicts(conn, accounts, as_of, batch_id)
 
     conn.execute(
         sa.insert(HoldingSnapshot),
         [
             {
                 "account_id": accounts[h.account],
-                "as_of": batch.as_of,
+                "as_of": as_of,
                 "symbol": h.symbol,
                 "quantity": h.quantity,
                 "price": h.price,
@@ -198,15 +226,73 @@ def _normalize(conn: sa.Connection, batch_id: uuid.UUID) -> None:
         [
             {
                 "account_id": accounts[name],
-                "as_of": batch.as_of,
+                "as_of": as_of,
                 "balance": balance,
                 "batch_id": batch_id,
             }
             for name, balance in normalized.balances.items()
         ],
     )
+
+
+def _body_weights(
+    conn: sa.Connection, readings: Sequence[BodyReading], exported: dt.date, batch_id: uuid.UUID
+) -> None:
+    """A weight history's weigh-ins, under the checks manual entry makes: one
+    unit, and a day already recorded never overwritten — by hand or by an
+    earlier export, which a later, longer one repeats."""
+    late = [r for r in readings if r.as_of > exported]
+    if late:
+        raise DateMismatch(
+            f"Row {late[0].row} is dated {late[0].as_of:%Y-%m-%d}, after {exported:%Y-%m-%d}, "
+            "the day this export was said to be taken. One of the two is wrong."
+        )
+
+    other = conn.execute(
+        sa.select(BodyMetric.unit)
+        .where(BodyMetric.metric == BODY_WEIGHT, BodyMetric.unit != WEIGHT_UNIT)
+        .limit(1)
+    ).scalar()
+    if other is not None:
+        raise Conflict(
+            f"Body weight is already recorded in {other}; this history is read in "
+            f"{WEIGHT_UNIT}. A measurement is kept in one unit, because its change is one "
+            "value subtracted from another."
+        )
+
+    clashes = conn.execute(
+        sa.select(BodyMetric.as_of, ImportBatch.original_filename)
+        .select_from(BodyMetric)
+        .outerjoin(ImportBatch, ImportBatch.id == BodyMetric.batch_id)
+        .where(
+            BodyMetric.metric == BODY_WEIGHT,
+            BodyMetric.as_of.in_([r.as_of for r in readings]),
+            BodyMetric.batch_id.is_distinct_from(batch_id),
+        )
+        .order_by(BodyMetric.as_of)
+    ).all()
+    if clashes:
+        sources = sorted({f"from {f}" if f else "entered by hand" for _, f in clashes})
+        shown = ", ".join(f"{d:%Y-%m-%d}" for d, _ in clashes[:3])
+        more = f" and {len(clashes) - 3} more" if len(clashes) > 3 else ""
+        raise Conflict(
+            f"{len(clashes)} of these days already have a body weight ({shown}{more}; "
+            f"{'; '.join(sources)}). An import never overwrites what is there. Remove the "
+            "earlier import — or those entries — first if this file should replace them."
+        )
+
     conn.execute(
-        sa.update(ImportBatch).where(ImportBatch.id == batch_id).values(status="normalized")
+        sa.insert(BodyMetric),
+        [
+            {
+                "as_of": r.as_of,
+                "metric": BODY_WEIGHT,
+                "value": r.weight,
+                "unit": WEIGHT_UNIT,
+                "batch_id": batch_id,
+            }
+            for r in readings
+        ],
     )
 
 
@@ -292,6 +378,9 @@ def _result(conn: sa.Connection, batch_id: uuid.UUID, *, already_imported: bool)
         .where(BalanceSnapshot.batch_id == batch_id)
         .order_by(Account.label)
     ).all()
+    weighed = conn.execute(
+        sa.select(sa.func.count()).where(BodyMetric.batch_id == batch_id)
+    ).scalar_one()
     return ImportResult(
         batch_id=batch_id,
         filename=batch.original_filename,
@@ -302,4 +391,5 @@ def _result(conn: sa.Connection, batch_id: uuid.UUID, *, already_imported: bool)
         accounts=tuple(
             AccountImported(label, balance, count) for label, balance, count in accounts
         ),
+        body_weights=weighed,
     )

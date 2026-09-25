@@ -624,6 +624,8 @@ export interface components {
             already_imported: boolean;
             /** Accounts */
             accounts: components["schemas"]["AccountImported"][];
+            /** Body Weights */
+            body_weights: number;
         };
         /** ImportRequest */
         ImportRequest: {

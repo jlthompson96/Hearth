@@ -22,8 +22,9 @@ from ingest.errors import AccountNumberRefused, MalformedExport, UnknownLayout
 from ingest.fidelity import FidelityPositions
 from ingest.normalizer import Normalizer, RawRow
 from ingest.values import looks_like_account_number, shape
+from ingest.weight_history import WeightHistory
 
-NORMALIZERS: tuple[Normalizer, ...] = (FidelityPositions(),)
+NORMALIZERS: tuple[Normalizer, ...] = (FidelityPositions(), WeightHistory())
 
 #: A column whose name says it holds an identifier Hearth never stores.
 _IDENTIFIER_COLUMN = re.compile(

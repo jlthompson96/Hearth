@@ -69,6 +69,8 @@ class ImportOutcome(BaseModel):
     rows: int
     already_imported: bool
     accounts: list[AccountImported]
+    #: Weigh-ins recorded, for a weight history; 0 for a positions export.
+    body_weights: int
 
 
 class Batch(BaseModel):
@@ -163,4 +165,5 @@ def _outcome(result: ImportResult) -> ImportOutcome:
         rows=result.rows,
         already_imported=result.already_imported,
         accounts=[AccountImported(**vars(a)) for a in result.accounts],
+        body_weights=result.body_weights,
     )

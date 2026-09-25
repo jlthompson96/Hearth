@@ -433,6 +433,46 @@ seeded from Phase 1 and nothing read it, and a fitness specialist that cannot te
 body-mass trend is a strange thing to ship — particularly when that number is the reason
 the pre-flight check exists.
 
+**Addendum, 2026-09-25: real training data — by hand now, a CSV for the history.** The
+owner's answer to open question 1: both, and **in pounds**. Manual entry landed first
+because it needs nothing but the schema: workouts with their sets and body weight, on the
+Manual entry screen, with the money side's promises — nothing overwritten, nothing beside
+the fixture, a hand-entered entry removable and an imported one only with its import.
+
+- **Pounds are stored as pounds.** The schema has carried a unit beside every weight since
+  Phase 1, so nothing is converted: 225 lb through kilograms and back is 224.999 lb, the
+  rounding failure the evals exist to catch. The fixture stays in kilograms, and the
+  fixture guard keeps the two apart.
+- **One unit per lift, enforced twice.** Entry refuses a second unit for anything already
+  logged, and `lift_progression` and `body_metric_trend` now refuse to subtract across units
+  over the period asked — a `caveat:` sentence with no figures, since every figure would be
+  half of a wrong subtraction.
+- **Names are kept to what is logged.** The tool matches a lift by name, so entry folds
+  spelling into an existing name ("Bench Press", "bench_press" → "bench press") and the form
+  offers the logged names. The spelling rule moved to `tools/fitness.py` so entry and tool
+  cannot disagree about it. "bench" is still a new name, not a guess.
+- **Weights are read as strictly as money:** a plain number, never negative, at most three
+  places — the column's precision — or refused by its shape.
+
+**The CSV history is body weight: `Date, Recorded, Moving Average`** — seen as a screenshot
+of the file open in Excel, the header cut off at "Moving Av". `ingest/weight_history.py`
+reads it through the same importer as Fidelity's: exact header, raw rows stored first,
+normalized from the stored rows, all or nothing. What was not seen was held strict for
+the first real import to test, as Phase 2 did — and it caught one: the first version read
+M/D/YYYY, from the screenshot, and the real file was refused on row 2. Checked with every
+digit masked, so no weigh-in entered the session: 809 rows, the header exactly as
+guessed, every date `####-##-##`, every weight `###.##`. Excel had been re-formatting the
+dates for display. The importer now reads YYYY-MM-DD only, which cannot be misread, and a
+dry run over the real file read all 809. A blank "Recorded" is a day without a
+weigh-in and is skipped; the moving average is the app's arithmetic and stays in the raw
+rows. A weigh-in dated after the export, a day already recorded (by hand or by an earlier
+export, which a longer one repeats) or a second unit is refused. Removing the import takes
+its weigh-ins with it: the foreign key is ON DELETE SET NULL, and without that they would
+have stayed behind looking entered by hand.
+
+The file stays in `HEARTH_DATA_DIR` and is imported by name; it is never opened in this
+workspace.
+
 ## Phase 12 — MCP connections (2–3)
 
 `MultiServerMCPClient`, local stdio servers first (filesystem scoped to one directory, a
@@ -513,7 +553,9 @@ transaction-level ingestion (drags in merchant categorization).
 
 ## Open questions
 
-1. Fitness data: app export or manual? — unblocks Phase 11
+1. Fitness data: **answered 2026-09-25 — both, in pounds.** Manual entry is built, and the
+   body-weight history importer; its first real import is the test of what the screenshot
+   could not show.
 2. SearXNG without Docker — blocks Phase 9, and Langfuse with it. See the Postgres answer below: that machine
    has no working Docker, and SearXNG is a compose service. Either Docker gets fixed or
    SearXNG runs natively.
