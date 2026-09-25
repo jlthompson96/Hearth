@@ -6,7 +6,8 @@ calling Python functions that query Postgres, and it states the figures those fu
 computed rather than any of its own. Nothing leaves this machine. Forge, the training
 specialist, ships with it and is described below.
 
-Tagged from `TODO-SHA`, 2026-09-22.
+Tagged `mvp-1` at `32cbff7`, written 2026-09-22, measured and tagged 2026-09-25. Its backend
+is `f9eeaa4`'s; the two commits after it touch only the web client.
 
 ## What it does
 
@@ -52,6 +53,12 @@ Tagged from `TODO-SHA`, 2026-09-22.
   0/3 and then 3/3. A single run's one-case delta is not evidence; an interleaved A/B is.
 - **An answer can offer to show a period with no records**, and the follow-up then finds
   nothing. Rewording the offer was measured, cost exactness elsewhere, and was reverted.
+- **A long answer can drop an exact figure's cents.** In the tagging run the detailed
+  positions answer wrote "$27,600" for "$27,600.00" (0/3), and a "yes" to a net-worth offer
+  wrote "$38,250" (1/3) — both 3/3 in the run before, while two caveat cases went the
+  other way, 0/3 and 1/3 to 3/3. The prompts were reworded in `f9eeaa4` and this is their
+  first full run, so one run cannot say whether that wording or the known variance moved
+  them; an interleaved A/B on those cases would.
 - **The model's reasoning text is not kept** in the Model log — LM Studio returns it in a
   field the client drops — only its token count.
 
@@ -60,8 +67,8 @@ Tagged from `TODO-SHA`, 2026-09-22.
 ```bash
 scripts\hearth.cmd     # or: make start — Postgres, backend, frontend, browser
 make backup            # a dump outside the repository; keeps the newest fourteen
-make test              # 554 tests, about three seconds, no model
-make eval              # 62 behavioural cases against the real model, about 20 minutes
+make test              # 557 tests, about three seconds, no model
+make eval              # 62 behavioural cases against the real model, about 25 minutes
 ```
 
 The chat is at http://localhost:5173. Postgres is a native cluster rather than a service,
@@ -69,9 +76,12 @@ so a reboot needs `make start` (or the shortcut) again.
 
 ## What it is measured at
 
-- **`make test`:** 554 tests, no model, about three seconds.
-- **`make eval`:** TODO-EVAL on `nvidia/nemotron-3-nano-4b`. Recorded in
-  `evals/results/`, one file per commit, each naming the model it measured.
+- **`make test`:** 557 tests, no model, about three seconds.
+- **`make eval`:** 59/62 cases, 176/186 runs (95%) on `nvidia/nemotron-3-nano-4b`, reasoning
+  at the model's default, clean tree — `evals/results/32cbff7.json`. The three misses: the
+  known training-advice follow-up (0/3, as always), and the two dropped-cents cases above.
+  The previous full run, `2bcd3b7`, was 57/61 and 173/183. Results are kept one file per
+  commit, each naming the model it measured.
 - Routing was measured at 60/60 on twenty labelled questions; the pre-flight filter at 113
   cases in both directions, with every entry point proven to refuse before a model is built.
 
