@@ -315,6 +315,13 @@ is wrong by a digit, and a finance assistant that does that once is worthless af
 writes the qualification out as a finished sentence rather than leaving the model to
 compose one from a list of dates.
 
+Accounts are updated on different days — an export on the 21st, a balance typed in on
+the 20th — so a date where an account has no balance takes its latest from the 45 days
+before, rather than leaving that account out of the total. Every balance carried forward
+is named twice: on its own line, and in a second finished sentence
+(`coverage.carried_caveat()`) that the model repeats like the first. An account with
+nothing in those 45 days is still a gap.
+
 ## Asking a question
 
 `make dev`, then open the UI and ask — you do not name a specialist. The Steward reads the
@@ -573,9 +580,10 @@ docker/       Postgres init and SearXNG configuration.
 
 `make seed` loads the golden fixture into the development database: five invented
 accounts over the current year, with coverage deliberately uneven — the brokerage account
-opens in March, and one month of retirement data is missing, as though an export skipped
-it. A fixture where every account has every month would let a net worth trend look right
-while the coverage handling underneath it was broken.
+opens in March, and two months of retirement data are missing, as though exports skipped
+them — June, near enough to May's balance to carry it forward, and July, too far. A
+fixture where every account has every month would let a net worth trend look right while
+the coverage handling underneath it was broken.
 
 The evals do not read that database. They rebuild the fixture in `hearth_eval` at the start
 of every run, so real data in the development database never reaches an eval result — and
