@@ -164,6 +164,7 @@ text is not in this table, because it is not implemented.
 | **The chat model fits the card** | `model_choice.py`: a model is offered only if it is a chat model, was trained for tool use, is no larger than 6 GiB (CLAUDE.md's ~8B at Q4, with room for the KV cache and embeddings), and can switch reasoning off. A switch loads it at 8,192 tokens before unloading the old one, so a failed load changes nothing | `tests/test_model_choice.py` (a fake LM Studio records every load and unload) |
 | **No setting loosens a guardrail** | `preferences.py`: three preferences, each a fixed list of values — answer length and two retention periods. The hop cap, step cap, follow-up window, pre-flight check and read-only role are shown on the Settings screen locked, and `.env` is never written from a page | `tests/test_preferences.py` |
 | **Real data stays out of the repo** | `HEARTH_DATA_DIR` inside the repository is refused; the evals run on their own fixture database, so no real figure reaches a committed result file | `tests/test_datadir.py`, `evals/conftest.py` |
+| **Only this machine's own pages can read the API** | `api/hosts.py`: a request whose Host header does not name this machine — `localhost`, `127.0.0.1` or `::1` — is refused before any route runs. Listening on 127.0.0.1 keeps other machines out but not other web pages: one that re-points its own domain at 127.0.0.1 (DNS rebinding) could otherwise read the thread history and the Model log as its own origin | `tests/test_hosts.py` |
 
 Rules 8–11 govern MCP, which arrives in Phase 12; no MCP code exists yet.
 

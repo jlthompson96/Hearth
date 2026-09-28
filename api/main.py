@@ -20,6 +20,7 @@ from fastapi import FastAPI
 import llm
 import model_choice
 from api import __version__, refusals
+from api.hosts import LoopbackHostOnly
 from api.routes import (
     accounts,
     chat,
@@ -63,6 +64,8 @@ app = FastAPI(
 )
 
 refusals.install(app)
+# Outermost, so a request addressed to any other name reaches no route at all.
+app.add_middleware(LoopbackHostOnly)
 
 app.include_router(health.router)
 app.include_router(chat.router)

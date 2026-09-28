@@ -7,7 +7,7 @@ from api.main import app
 
 
 def test_health_returns_ok() -> None:
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         response = client.get("/health")
 
     assert response.status_code == 200
@@ -17,14 +17,14 @@ def test_health_returns_ok() -> None:
 def test_health_needs_no_configuration() -> None:
     """/health must answer on a machine with no .env, no Postgres and no model
     server — otherwise it is useless as the thing you check when those break."""
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         assert client.get("/health").status_code == 200
 
 
 def test_openapi_schema_is_generated() -> None:
     """The TypeScript types are generated from this document; if it stops
     building, the UI's types silently go stale."""
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         schema = client.get("/openapi.json").json()
 
     assert schema["info"]["title"] == "Hearth"

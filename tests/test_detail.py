@@ -91,7 +91,9 @@ def seen(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 def test_the_default_is_normal(seen: dict[str, Any]) -> None:
-    TestClient(app).post("/api/chat", json={"message": "how has my net worth moved"})
+    TestClient(app, base_url="http://localhost").post(
+        "/api/chat", json={"message": "how has my net worth moved"}
+    )
 
     assert seen["detail"] == "normal"
 
@@ -101,7 +103,7 @@ def test_a_rerun_names_the_specialist_and_the_level_and_is_stored_with_it(
 ) -> None:
     """What the Less / Normal / More control sends: the same question, the
     specialist that answered it, and the level asked for."""
-    TestClient(app).post(
+    TestClient(app, base_url="http://localhost").post(
         "/api/chat",
         json={"message": "how has my net worth moved", "agent": "tally", "detail": "detailed"},
     )
@@ -112,6 +114,8 @@ def test_a_rerun_names_the_specialist_and_the_level_and_is_stored_with_it(
 
 
 def test_a_level_that_does_not_exist_is_rejected_at_the_door() -> None:
-    response = TestClient(app).post("/api/chat", json={"message": "hi", "detail": "verbose"})
+    response = TestClient(app, base_url="http://localhost").post(
+        "/api/chat", json={"message": "hi", "detail": "verbose"}
+    )
 
     assert response.status_code == 422
