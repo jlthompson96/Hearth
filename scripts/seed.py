@@ -14,7 +14,9 @@ The shape of the data is deliberate. Coverage is uneven — the brokerage accoun
 opens partway through the year, and one month of retirement data is missing, as
 though an export skipped it. A fixture where every account has every month
 would let a net worth trend look correct while the coverage handling underneath
-it was entirely broken.
+it was entirely broken. Body mass is likewise not one shape: this year's
+month-ends follow daily weigh-ins through the second half of last year, as a
+real weight export would, so a long period reaches the model grouped.
 
     make seed      # load it into the development database
     make unseed    # empty the development database, before a first real import
@@ -81,6 +83,18 @@ MISSING = {("Retirement", dt.date(YEAR, 7, 31))}
 HOLDINGS = [("VTI", "120.00000000", "230.00"), ("BND", "300.00000000", "72.00")]
 
 LIFTS = {"back squat": ("100.000", "2.500"), "bench press": ("70.000", "1.250")}
+
+#: Daily weigh-ins through the second half of last year, before this year's
+#: month-ends: a history long enough that `body_metric_trend` groups it, which
+#: is the shape a real weight export has. It starts in July so it stays clear of
+#: the tests that write their own pounds history ending in March of last year.
+DAILY_WEIGH_INS = [dt.date(YEAR - 1, 7, 1) + dt.timedelta(days=d) for d in range(184)]
+
+
+def _daily_weight(day: int) -> Decimal:
+    """86.000 on the first day, down 0.020 a day, wobbling 0.200 either way on
+    a three-day cycle so a month's low and high differ from its average."""
+    return Decimal("86.000") - Decimal("0.020") * day + Decimal("0.200") * ((day + 1) % 3 - 1)
 
 
 def _id(kind: str, key: str) -> uuid.UUID:
@@ -151,7 +165,11 @@ def seed(session: Session) -> dict[str, int]:
                 unit="kg",
             )
         )
-    counts["body_metric"] = len(MONTH_ENDS)
+    for day, as_of in enumerate(DAILY_WEIGH_INS):
+        session.add(
+            BodyMetric(as_of=as_of, metric="body_mass", value=_daily_weight(day), unit="kg")
+        )
+    counts["body_metric"] = len(MONTH_ENDS) + len(DAILY_WEIGH_INS)
 
     sets = 0
     for index, as_of in enumerate(MONTH_ENDS):

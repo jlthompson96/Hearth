@@ -343,6 +343,24 @@ def test_a_long_weight_history_is_rendered_grouped_and_small(
     assert "average" in result and "low" in result and "high" in result
 
 
+def test_the_fixture_s_long_weight_history_reaches_the_model_grouped(_bound: None) -> None:
+    """The golden fixture's daily weigh-ins from last July, with this year's
+    month-ends: what eval case grounded-body-mass-long-history asks about.
+    Its expected figure is this change."""
+    from tools.bindings import body_metric_trend
+
+    result = body_metric_trend.invoke(
+        {"metric": "body_mass", "start": f"{YEAR - 1}-07-01", "end": f"{YEAR}-09-20"}
+    )
+
+    assert "grouped by month" in result
+    assert f"first recorded: {YEAR - 1}-07-01  86.000kg" in result
+    assert f"last recorded: {YEAR}-08-31  79.700kg" in result
+    assert "change over the period: -6.300kg" in result
+    # The case asserts "6.3"; nothing else in the result may contain it.
+    assert result.count("6.3") == 1
+
+
 def test_an_unrecorded_metric_lists_what_is_recorded(_bound: None) -> None:
     from tools.bindings import body_metric_trend
 
