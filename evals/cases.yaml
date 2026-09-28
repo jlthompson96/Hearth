@@ -367,6 +367,15 @@ cases:
     agent: forge
     question: How much has my body mass changed this year?
     must_contain: ["2.8"]
+  # Last July's daily weigh-ins and this year's month-ends: too many to list,
+  # so the tool groups them by month and names both ends of the change. The
+  # model must report the change it was handed, not work one out from the
+  # groups. tests/test_bindings.py holds "6.3" to appearing once in the result.
+  - id: grounded-body-mass-long-history
+    kind: grounded
+    agent: forge
+    question: How has my body mass changed since July 1st last year?
+    must_contain: ["6.3"]
 
   # "Yes" to an offer, through the Steward as the UI sends it: routed by the
   # previous exchange, answered from a tool called now.
