@@ -40,6 +40,24 @@ PROMPTS = Path(__file__).resolve().parents[1] / "prompts"
 #: on rather than grind at, on a model this size and a window this small.
 MAX_STEPS = 4
 
+#: Rule 7 again, for what comes back rather than how often: the most tool
+#: output, in characters, one turn may put in front of the model. Measured
+#: against the window on 2026-09-21 (`agents.conversation`): a turn peaks near
+#: 3,300 of 8,192 tokens with a small tool result, a follow-up adds up to
+#: 1,750, and figures run about 2.3 characters to a token — so 6,000 characters,
+#: about 2,600 tokens, is what fits beside the rest. A tool should summarise
+#: long before this (`tools.fitness.MAX_GROUPS`); this is the backstop for one
+#: that does not.
+MAX_RESULT_CHARS = 6000
+
+#: What the model reads in place of a result over the budget. Not the result
+#: cut short: a list with its end missing reads as complete. A `caveat:` line,
+#: so the prompts' rule to repeat such a line in full carries it to the answer.
+TOO_LONG = (
+    "caveat: There are too many records in that period to report in one answer. "
+    "Ask about a shorter period."
+)
+
 
 @dataclass(frozen=True)
 class TokenEvent:
@@ -124,6 +142,25 @@ def detail_prompt(detail: Detail) -> str:
     return load_prompt(f"detail/{detail}").strip()
 
 
+def bound(tools: list[BaseTool]) -> Any:
+    """The chat model a specialist calls, with its tools bound."""
+    return chat_model().bind_tools(tools)
+
+
+def opening(
+    system: str, question: str, history: Sequence[Exchange] = ()
+) -> list[tuple[str, str] | BaseMessage]:
+    """What the model reads on a turn's first step: its prompt, the earlier
+    exchanges it is shown, and the question. `run` starts from this, and
+    `evals.fingerprint` hashes it, so the two cannot describe different
+    requests."""
+    conversation: list[tuple[str, str] | BaseMessage] = [("system", system)]
+    for exchange in history:
+        conversation += [("human", exchange.question), ("ai", exchange.answer)]
+    conversation.append(("human", question))
+    return conversation
+
+
 def run(
     *,
     caller: str,
@@ -143,13 +180,12 @@ def run(
     `caller`, including a model call that failed — the failed one is the entry
     most worth reading.
     """
-    model = chat_model().bind_tools(tools)
+    model = bound(tools)
     by_name = {t.name: t for t in tools}
 
-    conversation: list[tuple[str, str] | BaseMessage] = [("system", system)]
-    for exchange in history:
-        conversation += [("human", exchange.question), ("ai", exchange.answer)]
-    conversation.append(("human", question))
+    conversation = opening(system, question, history)
+    #: Tool output passed to the model so far this turn, against MAX_RESULT_CHARS.
+    carried = 0
 
     for _step in range(MAX_STEPS):
         gathered: AIMessageChunk | None = None
@@ -205,6 +241,16 @@ def run(
                     result = str(tool.invoke(args))
                 except Exception as error:  # noqa: BLE001 - surfaced to the model, not swallowed
                     result = failed = f"{type(error).__name__}: {error}"
+
+            # Counted over the turn, not the call: two results that fit alone
+            # can overflow the window together.
+            if carried + len(result) > MAX_RESULT_CHARS:
+                failed = (
+                    f"withheld: {len(result)} characters, over the {MAX_RESULT_CHARS} "
+                    f"a turn may carry ({carried} already carried)"
+                )
+                result = TOO_LONG
+            carried += len(result)
 
             yield LogEvent(
                 LogEntry(

@@ -15,10 +15,14 @@ import sqlalchemy as sa
 from db.models import BodyMetric, Workout, WorkoutSet
 from scripts.seed import YEAR
 from tools.fitness import (
+    MAX_GROUPS,
+    MAX_POINTS,
+    MetricPoint,
     MixedUnitsError,
     UnknownExerciseError,
     get_body_metric_trend,
     get_lift_progression,
+    group_points,
 )
 
 JAN = dt.date(YEAR, 1, 1)
@@ -129,3 +133,104 @@ def test_a_body_metric_logged_in_two_units_is_not_subtracted(seeded: sa.Connecti
 
     with pytest.raises(MixedUnitsError):
         get_body_metric_trend(seeded, "body_mass", JAN, DEC)
+
+
+# --- a long history is grouped, not listed ----------------------------------------
+#
+# The real body-weight history is 809 daily weigh-ins. Listed one to a line that
+# is about 19,500 characters — more than the model's whole 8,192-token window —
+# so past MAX_POINTS the tool groups them and computes each group here, in
+# Python, where rule 1 puts arithmetic.
+
+#: A Monday, so the weekly groups below are whole weeks.
+MONDAY = dt.date(2024, 1, 1)
+
+
+def _daily(days: int, *, every: int = 1) -> tuple[MetricPoint, ...]:
+    """A reading every `every` days from MONDAY, cycling 80.000 to 80.600 over
+    each week: every whole week averages exactly 80.3."""
+    return tuple(
+        MetricPoint(
+            as_of=MONDAY + dt.timedelta(days=day),
+            value=Decimal("80.000") + Decimal("0.100") * (day % 7),
+        )
+        for day in range(0, days, every)
+    )
+
+
+def test_a_short_history_is_not_grouped(seeded: sa.Connection) -> None:
+    """The fixture's twelve month-end weigh-ins are listed as they are, so
+    every existing answer and eval case reads exactly what it read before."""
+    trend = get_body_metric_trend(seeded, "body_mass", JAN, DEC)
+
+    assert len(trend.points) == 12 <= MAX_POINTS
+    assert trend.grouped_by is None
+    assert trend.groups == ()
+
+
+def test_ten_weeks_of_daily_readings_are_grouped_by_week() -> None:
+    grain, groups = group_points(_daily(70))
+
+    assert grain == "week"
+    assert len(groups) == 10
+    first = groups[0]
+    assert first.label == "week of 2024-01-01"
+    assert (first.first, first.last) == (MONDAY, dt.date(2024, 1, 7))
+    assert first.count == 7
+    assert first.average == Decimal("80.3")
+    # Low and high are recordings, so they are reported as recorded.
+    assert (first.low, first.high) == (Decimal("80.000"), Decimal("80.600"))
+
+
+def test_a_year_of_daily_readings_is_grouped_by_month() -> None:
+    """53 weeks is more than MAX_GROUPS lines, so the next grain up."""
+    grain, groups = group_points(_daily(366))
+
+    assert grain == "month"
+    assert [g.label for g in groups] == [f"2024-{m:02d}" for m in range(1, 13)]
+    assert sum(g.count for g in groups) == 366
+
+
+def test_three_years_of_weekly_readings_are_grouped_by_quarter() -> None:
+    grain, groups = group_points(_daily(3 * 364, every=7))
+
+    assert grain == "quarter"
+    assert groups[0].label == "2024-Q1"
+    assert groups[-1].label == "2026-Q4"
+    assert len(groups) == 12 <= MAX_GROUPS
+
+
+def test_an_average_is_rounded_to_tenths_in_python() -> None:
+    """80.000, 80.100 and 80.100 average 80.0666…; the model is handed 80.1
+    rather than a long decimal it might round differently each time."""
+    points = tuple(
+        MetricPoint(MONDAY + dt.timedelta(days=d), Decimal(v))
+        for d, v in enumerate(["80.000", "80.100", "80.100"])
+    )
+
+    _, (only,) = group_points(points)
+
+    assert only.average == Decimal("80.1")
+
+
+def test_a_long_history_from_the_database_is_grouped(seeded: sa.Connection) -> None:
+    """The real shape: a daily weight history in pounds, the year before the
+    fixture's, so the fixture's kilograms are outside the period asked."""
+    start = dt.date(YEAR - 3, 1, 1)
+    for day in range(809):
+        seeded.execute(
+            sa.insert(BodyMetric).values(
+                as_of=start + dt.timedelta(days=day),
+                metric="body_mass",
+                value=Decimal("182.40"),
+                unit="lb",
+            )
+        )
+    end = start + dt.timedelta(days=808)
+
+    trend = get_body_metric_trend(seeded, "body_mass", start, end)
+
+    assert len(trend.points) == 809
+    assert trend.grouped_by is not None
+    assert 0 < len(trend.groups) <= MAX_GROUPS
+    assert sum(g.count for g in trend.groups) == 809

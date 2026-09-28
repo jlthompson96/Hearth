@@ -203,8 +203,11 @@ def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
     # Earlier turns count through their questions and tool results, as in the
     # chat route — never through their answers.
     shown = window(case.history, answered_by) if answered_by else []
-    earlier = [t for e in shown for t in (e.question, *e.results)]
-    flags = ungrounded(text, [*results, case.question, *earlier])
+    flags = ungrounded(
+        text,
+        [*results, *(r for e in shown for r in e.results)],
+        [case.question, *(e.question for e in shown)],
+    )
     if flags:
         return False, f"figures no tool returned: {flags} in: {text[:160]!r}"
 
@@ -245,7 +248,13 @@ def head_sha() -> str:
 
 
 def record(
-    results: list[Result], *, model: str, dirty: bool, reasoning_effort: str | None = None
+    results: list[Result],
+    *,
+    model: str,
+    dirty: bool,
+    reasoning_effort: str | None = None,
+    packages: dict[str, str] | None = None,
+    prompts: dict[str, str] | None = None,
 ) -> Path:
     """Write `results/<sha>.json`.
 
@@ -254,7 +263,9 @@ def record(
     belongs to a model — the same cases against a different one are a different
     measurement, not a comparable one. The same goes for how much it reasons:
     a run with reasoning off gets its own file rather than overwriting the one
-    with it on.
+    with it on. And for what it was sent: `packages` and `prompts` are
+    `evals.fingerprint`'s, so two runs can be seen to have measured the same
+    requests, or not.
     """
     RESULTS.mkdir(exist_ok=True)
     sha = head_sha()
@@ -265,6 +276,8 @@ def record(
         "reasoning_effort": reasoning_effort,
         "fixture_year": YEAR,
         "recorded_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "packages": packages,
+        "prompts": prompts,
         "totals": {
             "cases": len(results),
             "passing": sum(1 for r in results if r.ok),

@@ -303,10 +303,27 @@ def _render_metric(result: MetricTrend) -> str:
             f"and {result.end:{ISO}}. This is missing data, not an unchanged value."
         )
     unit = result.unit or ""
-    lines = [
-        f"{result.metric} {result.start:{ISO}} to {result.end:{ISO}}",
-        *(f"  {p.as_of:{ISO}}  {p.value}{unit}" for p in result.points),
-    ]
+    if result.grouped_by is not None:
+        # Too many to list: each group's figures were computed in
+        # `tools.fitness`, and both ends of the change are named, so nothing
+        # is left for the model to work out from the groups.
+        first, last = result.points[0], result.points[-1]
+        lines = [
+            f"{result.metric} {result.start:{ISO}} to {result.end:{ISO}}: "
+            f"{len(result.points)} recordings, grouped by {result.grouped_by}",
+            *(
+                f"  {g.label}  average {g.average}{unit}, low {g.low}{unit}, "
+                f"high {g.high}{unit} ({g.count} recordings)"
+                for g in result.groups
+            ),
+            f"first recorded: {first.as_of:{ISO}}  {first.value}{unit}",
+            f"last recorded: {last.as_of:{ISO}}  {last.value}{unit}",
+        ]
+    else:
+        lines = [
+            f"{result.metric} {result.start:{ISO}} to {result.end:{ISO}}",
+            *(f"  {p.as_of:{ISO}}  {p.value}{unit}" for p in result.points),
+        ]
     if result.change is not None:
         lines.append(f"change over the period: {result.change:+}{unit}")
     return "\n".join(lines)

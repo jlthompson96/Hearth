@@ -238,6 +238,25 @@ ATTEMPTS = 2
 _UNREADABLE = (ValueError, LengthFinishReasonError, ContentFilterFinishReasonError)
 
 
+def routing_request(
+    question: str,
+    previous: Exchange | None,
+    *,
+    with_errand: bool,
+    temperature: float = 0.0,
+) -> tuple[Any, list[tuple[str, str]]]:
+    """The constrained model a routing call invokes, and what it is asked.
+    `ConstrainedJSONRouter.route` sends this, and `evals.fingerprint` hashes
+    it, so the two cannot describe different requests."""
+    model = structured_reply(
+        decision_schema(with_errand),
+        temperature=temperature,
+        reasoning_effort=REASONING_EFFORT,
+    )
+    asked = [("system", system_prompt(with_errand)), ("human", message(question, previous))]
+    return model, asked
+
+
 class ConstrainedJSONRouter:
     """The default. One constrained-JSON call, no tool calling, retried once.
 
@@ -254,12 +273,9 @@ class ConstrainedJSONRouter:
 
     def route(self, question: str, previous: Exchange | None = None) -> Routed:
         with_errand = errand.available() if self._with_errand is None else self._with_errand
-        model = structured_reply(
-            decision_schema(with_errand),
-            temperature=self._temperature,
-            reasoning_effort=REASONING_EFFORT,
+        model, asked = routing_request(
+            question, previous, with_errand=with_errand, temperature=self._temperature
         )
-        asked = [("system", system_prompt(with_errand)), ("human", message(question, previous))]
         body = request_body(model, asked)
         log: list[LogEntry] = []
         failure: Exception | None = None

@@ -309,6 +309,40 @@ def test_body_metric_trend_reports_values_exactly_as_recorded(_bound: None) -> N
     assert "change over the period:" in result
 
 
+def test_a_long_weight_history_is_rendered_grouped_and_small(
+    _bound: None, seeded: sa.Connection
+) -> None:
+    """809 daily weigh-ins, the size of the real export. Listed, they came to
+    19,484 characters — more than the whole context window. Grouped, the model
+    gets each group's figures and both ends of the change, all computed."""
+    from db.models import BodyMetric
+    from tools.bindings import body_metric_trend
+
+    start = dt.date(YEAR - 3, 1, 1)
+    for day in range(809):
+        seeded.execute(
+            sa.insert(BodyMetric).values(
+                as_of=start + dt.timedelta(days=day),
+                metric="body_mass",
+                # 190.00 down to 182.00, a hundredth of a pound a day.
+                value=Decimal("190.00") - Decimal("0.01") * day,
+                unit="lb",
+            )
+        )
+    end = start + dt.timedelta(days=808)
+
+    result = body_metric_trend.invoke(
+        {"metric": "body_mass", "start": f"{start:%Y-%m-%d}", "end": f"{end:%Y-%m-%d}"}
+    )
+
+    assert len(result) < 2500, f"{len(result)} characters"
+    assert "809 recordings, grouped by quarter" in result
+    assert f"first recorded: {start:%Y-%m-%d}  190.000lb" in result
+    assert f"last recorded: {end:%Y-%m-%d}  181.920lb" in result
+    assert "change over the period: -8.080lb" in result
+    assert "average" in result and "low" in result and "high" in result
+
+
 def test_an_unrecorded_metric_lists_what_is_recorded(_bound: None) -> None:
     from tools.bindings import body_metric_trend
 

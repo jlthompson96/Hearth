@@ -15,6 +15,7 @@ produces the same number.
 """
 
 import datetime as dt
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -144,10 +145,39 @@ class UnknownMetricError(LookupError):
     and "this did not move" are different answers."""
 
 
+#: At most this many recordings are listed one to a line. A month of daily
+#: weigh-ins fits, and so does the fixture's year of month-ends, so every
+#: answer measured before grouping existed reads what it read then.
+MAX_POINTS = 31
+
+#: Past that, they are grouped by the smallest of week, month, quarter and year
+#: that comes to this many groups or fewer. A group's line is about seventy
+#: characters, so 24 of them stay under 2,000 — where the real body-weight
+#: history, 809 weigh-ins listed, was 19,484 characters: more than the whole
+#: 8,192-token window before the prompt was counted.
+MAX_GROUPS = 24
+
+
 @dataclass(frozen=True)
 class MetricPoint:
     as_of: dt.date
     value: Decimal
+
+
+@dataclass(frozen=True)
+class MetricGroup:
+    """The recordings in one week, month, quarter or year, summarised here so
+    the model is never handed a column of figures to average itself."""
+
+    label: str
+    first: dt.date
+    last: dt.date
+    count: int
+    #: To tenths: an average is computed, not recorded.
+    average: Decimal
+    #: Recordings, so exactly as recorded.
+    low: Decimal
+    high: Decimal
 
 
 @dataclass(frozen=True)
@@ -158,6 +188,51 @@ class MetricTrend:
     end: dt.date
     points: tuple[MetricPoint, ...]
     change: Decimal | None
+    #: None when the points are few enough to list; otherwise the grain they
+    #: were grouped by, and the groups, oldest first.
+    grouped_by: str | None = None
+    groups: tuple[MetricGroup, ...] = ()
+
+
+def _week(day: dt.date) -> str:
+    return f"week of {day - dt.timedelta(days=day.weekday()):%Y-%m-%d}"
+
+
+def _quarter(day: dt.date) -> str:
+    return f"{day.year}-Q{(day.month - 1) // 3 + 1}"
+
+
+#: Finest first. Each labels a date with the group it falls in; the labels of
+#: one grain sort in date order, which the grouping below relies on.
+_GRAINS: tuple[tuple[str, Callable[[dt.date], str]], ...] = (
+    ("week", _week),
+    ("month", lambda day: f"{day:%Y-%m}"),
+    ("quarter", _quarter),
+    ("year", lambda day: f"{day.year}"),
+)
+
+
+def group_points(points: Sequence[MetricPoint]) -> tuple[str, tuple[MetricGroup, ...]]:
+    """`points`, oldest first, grouped by the finest grain that gives at most
+    MAX_GROUPS groups — by year when none does."""
+    for grain, label in _GRAINS:
+        if len({label(p.as_of) for p in points}) <= MAX_GROUPS or grain == "year":
+            break
+    runs: dict[str, list[MetricPoint]] = {}
+    for point in points:
+        runs.setdefault(label(point.as_of), []).append(point)
+    return grain, tuple(
+        MetricGroup(
+            label=name,
+            first=run[0].as_of,
+            last=run[-1].as_of,
+            count=len(run),
+            average=(sum((p.value for p in run), Decimal("0")) / len(run)).quantize(TENTHS),
+            low=min(p.value for p in run),
+            high=max(p.value for p in run),
+        )
+        for name, run in runs.items()
+    )
 
 
 def get_body_metric_trend(
@@ -193,6 +268,7 @@ def get_body_metric_trend(
     ).all()
 
     points = tuple(MetricPoint(as_of=r.as_of, value=r.value) for r in rows)
+    grouped_by, groups = group_points(points) if len(points) > MAX_POINTS else (None, ())
     return MetricTrend(
         metric=metric,
         unit=rows[0].unit if rows else None,
@@ -201,4 +277,6 @@ def get_body_metric_trend(
         # One observation is not a change of nothing; it is not enough to say.
         change=(points[-1].value - points[0].value) if len(points) >= 2 else None,
         points=points,
+        grouped_by=grouped_by,
+        groups=groups,
     )
