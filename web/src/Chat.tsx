@@ -639,6 +639,12 @@ export function Chat({
   )
 }
 
+/** `answer` without `text`, when `text` is what it ends with — as the backend's
+ * `take_back` applies a provisional token. */
+function takeBack(answer: string, text: string): string {
+  return text && answer.endsWith(text) ? answer.slice(0, -text.length) : answer
+}
+
 /** Kept out of the component so the event handling reads as one list. */
 function applyEvent(event: ChatEvent, update: (change: (turn: Turn) => Turn) => void) {
   switch (event.type) {
@@ -646,9 +652,13 @@ function applyEvent(event: ChatEvent, update: (change: (turn: Turn) => Turn) => 
       update((t) => ({ ...t, routedTo: event.destination, confidence: event.confidence }))
       break
     case 'token':
-      // Text streamed during a step that turned out to be a tool call is not
-      // the answer. The backend flags it; dropping it is the whole point.
-      if (!event.provisional) update((t) => ({ ...t, answer: t.answer + event.text }))
+      // A provisional token takes back the text just streamed: narration
+      // before a tool call, or an answer cut off at the token limit. It has
+      // already been shown, so ignoring the event would leave it on screen.
+      update((t) => ({
+        ...t,
+        answer: event.provisional ? takeBack(t.answer, event.text) : t.answer + event.text,
+      }))
       break
     case 'tool':
       update((t) => ({ ...t, tools: [...t.tools, { name: event.name, args: event.args }] }))

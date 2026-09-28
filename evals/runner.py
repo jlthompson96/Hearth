@@ -31,6 +31,7 @@ from agents.loop import (
     TokenEvent,
     ToolEvent,
     ToolResultEvent,
+    take_back,
 )
 from scripts.seed import YEAR
 from steward import graph as steward
@@ -149,6 +150,8 @@ def _text_and_tools(
         match event:
             case TokenEvent(text=chunk, provisional=False):
                 text.append(chunk)
+            case TokenEvent(text=chunk, provisional=True):
+                text = [take_back("".join(text), chunk)]
             case ToolEvent(name=name):
                 tools.append(name)
             case RefusedEvent(signal=fired):

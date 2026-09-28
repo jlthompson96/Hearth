@@ -91,7 +91,7 @@ class _Breaks:
 
 
 def test_every_model_call_and_tool_run_is_logged_in_order(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(loop, "chat_model", lambda: _ToolThenAnswer())
+    monkeypatch.setattr(loop, "chat_model", lambda **_: _ToolThenAnswer())
 
     events = list(loop.run(caller="tally", system="s", question="q", tools=[allocation]))
     entries = [e.entry for e in events if isinstance(e, LogEvent)]
@@ -114,7 +114,7 @@ def test_every_model_call_and_tool_run_is_logged_in_order(monkeypatch: pytest.Mo
 def test_a_call_that_failed_is_logged_before_the_failure_propagates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(loop, "chat_model", lambda: _Breaks())
+    monkeypatch.setattr(loop, "chat_model", lambda **_: _Breaks())
     seen: list[Event] = []
 
     with pytest.raises(ConnectionError):
