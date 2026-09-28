@@ -163,6 +163,10 @@ def test_the_agent_loop_stops_a_model_that_never_stops_calling_tools(
         def bind_tools(self, tools: object) -> "_Relentless":
             return self
 
+        def bind(self, **_: object) -> "_Relentless":
+            # Offered no tools on the last step, it calls one anyway.
+            return self
+
         def stream(self, conversation: object) -> Iterator[AIMessageChunk]:
             _Relentless.streamed += 1
             yield AIMessageChunk(
@@ -187,9 +191,60 @@ def test_the_agent_loop_stops_a_model_that_never_stops_calling_tools(
     events = list(loop.run(caller="probe", system="s", question="q", tools=[probe]))
 
     assert _Relentless.streamed == loop.MAX_STEPS
-    assert sum(isinstance(e, ToolEvent) for e in events) == loop.MAX_STEPS
+    # The last step was offered no tools, so its call is not run.
+    assert sum(isinstance(e, ToolEvent) for e in events) == loop.MAX_STEPS - 1
     assert isinstance(events[-1], DoneEvent)
     assert f"stopped after {loop.MAX_STEPS} steps" in events[-1].reason
+
+
+def test_the_last_step_is_offered_no_tools_and_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A model that looks something up on every step it can. "Which account grew
+    the most?" did exactly this — one account per step — and the cap ended the
+    turn with nothing on screen. The last step is sent unbound, so it answers
+    from what it fetched, and the cap still counts the same model calls."""
+    import json
+
+    from langchain_core.messages import AIMessageChunk
+    from langchain_core.tools import tool
+
+    from agents import loop
+    from agents.loop import DoneEvent, TokenEvent, ToolEvent
+
+    class _LooksUpWhileItCan:
+        def __init__(self, tools: bool) -> None:
+            self.tools = tools
+
+        def bind_tools(self, tools: object) -> "_LooksUpWhileItCan":
+            return _LooksUpWhileItCan(tools=True)
+
+        def bind(self, **kwargs: object) -> "_LooksUpWhileItCan":
+            assert "tools" not in kwargs
+            return _LooksUpWhileItCan(tools=False)
+
+        def stream(self, conversation: object) -> Iterator[AIMessageChunk]:
+            if not self.tools:
+                yield AIMessageChunk(content="answered from what was fetched")
+                return
+            yield AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {"name": "probe", "args": json.dumps({"x": "more"}), "id": "c", "index": 0}
+                ],
+            )
+
+    @tool
+    def probe(x: str) -> str:
+        """A tool that always has another account to fetch."""
+        return "ok"
+
+    monkeypatch.setattr(loop, "chat_model", lambda: _LooksUpWhileItCan(tools=False))
+
+    events = list(loop.run(caller="probe", system="s", question="q", tools=[probe]))
+
+    assert sum(isinstance(e, ToolEvent) for e in events) == loop.MAX_STEPS - 1
+    answer = "".join(e.text for e in events if isinstance(e, TokenEvent) and not e.provisional)
+    assert answer == "answered from what was fetched"
+    assert isinstance(events[-1], DoneEvent) and events[-1].reason == "complete"
 
 
 # --- the agent loop's budget for tool results --------------------------------------

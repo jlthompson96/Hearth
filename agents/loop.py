@@ -38,6 +38,12 @@ PROMPTS = Path(__file__).resolve().parents[1] / "prompts"
 #: the ordinary shape (call a tool, answer from it). Four leaves room for a
 #: second lookup — a question needing a third is one this agent should give up
 #: on rather than grind at, on a model this size and a window this small.
+#:
+#: The last step is sent with no tools bound, so it can only answer. Before
+#: that, "which account grew the most?" spent all four steps fetching one
+#: account at a time and the turn ended with nothing on screen, 3 runs in 3.
+#: The cap still binds at the same number of model calls; it now ends in an
+#: answer from what was fetched rather than in silence.
 MAX_STEPS = 4
 
 #: Rule 7 again, for what comes back rather than how often: the most tool
@@ -54,8 +60,8 @@ MAX_RESULT_CHARS = 6000
 #: cut short: a list with its end missing reads as complete. A `caveat:` line,
 #: so the prompts' rule to repeat such a line in full carries it to the answer.
 TOO_LONG = (
-    "caveat: There are too many records in that period to report in one answer. "
-    "Ask about a shorter period."
+    "caveat: There are too many records in that period to go through in one answer "
+    "— a shorter period would work."
 )
 
 
@@ -147,6 +153,13 @@ def bound(tools: list[BaseTool]) -> Any:
     return chat_model().bind_tools(tools)
 
 
+def answer_only() -> Any:
+    """The chat model with no tools, for a turn's last step. Bound to nothing
+    rather than used bare, so the Model log still records the request body the
+    client built rather than a reconstruction of it."""
+    return chat_model().bind()
+
+
 def opening(
     system: str, question: str, history: Sequence[Exchange] = ()
 ) -> list[tuple[str, str] | BaseMessage]:
@@ -180,14 +193,16 @@ def run(
     `caller`, including a model call that failed — the failed one is the entry
     most worth reading.
     """
-    model = bound(tools)
+    with_tools = bound(tools)
     by_name = {t.name: t for t in tools}
 
     conversation = opening(system, question, history)
     #: Tool output passed to the model so far this turn, against MAX_RESULT_CHARS.
     carried = 0
 
-    for _step in range(MAX_STEPS):
+    for step in range(MAX_STEPS):
+        last = step == MAX_STEPS - 1
+        model = answer_only() if last else with_tools
         gathered: AIMessageChunk | None = None
         emitted: list[str] = []
         body = request_body(model, conversation, stream=True)
@@ -220,6 +235,11 @@ def run(
         # the answer. Say so rather than leaving it on screen.
         if emitted:
             yield TokenEvent("".join(emitted), provisional=True)
+
+        if last:
+            # Offered no tools, it called one anyway. Nothing is run: the cap
+            # is the guardrail, and a call it was not offered is not a step.
+            break
 
         conversation.append(gathered)
         for call in calls:
