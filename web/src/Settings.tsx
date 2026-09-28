@@ -102,6 +102,32 @@ function ModelSection({
 
   return (
     <div className="models">
+      <div className="model-current">
+        <label htmlFor="chat-model-picker">Current model</label>
+        <select
+          id="chat-model-picker"
+          value={picked}
+          disabled={switching !== null}
+          onChange={(event) => setPicked(event.target.value)}
+        >
+          {models.options.map((o) => (
+            <option key={o.key} value={o.key} disabled={o.refused !== null}>
+              {o.name}
+              {o.refused ? ` — ${o.refused}` : ''}
+            </option>
+          ))}
+        </select>
+        {picked !== models.active && (
+          <button
+            type="button"
+            disabled={switching !== null || !option || option.refused !== null}
+            onClick={() => void switchTo(picked)}
+          >
+            {switching ? `Loading ${switching}…` : `Switch to ${option?.name ?? picked}`}
+          </button>
+        )}
+      </div>
+
       <p className="muted small">
         Answering with <code>{models.active}</code>
         {models.active !== models.default && (
