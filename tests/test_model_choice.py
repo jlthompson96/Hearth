@@ -244,7 +244,7 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> Iterator[Tes
         "switch",
         lambda conn, key, client=None: real_switch(conn, key, client=studio.client()),
     )
-    yield TestClient(app)
+    yield TestClient(app, base_url="http://localhost")
 
 
 def test_the_screen_lists_every_chat_model_with_why_not(client: TestClient) -> None:
@@ -284,6 +284,6 @@ def test_lm_studio_down_is_said_not_crashed(
     monkeypatch.setattr(settings_route, "readonly_connection", _same)
     monkeypatch.setattr(model_choice, "catalog", _down)
 
-    models = TestClient(app).get("/api/settings").json()["models"]
+    models = TestClient(app, base_url="http://localhost").get("/api/settings").json()["models"]
 
     assert models["options"] == [] and "LM Studio did not answer" in models["unavailable"]

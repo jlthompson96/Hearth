@@ -45,7 +45,7 @@ def folder(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Path]:
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection, folder: Path) -> TestClient:
     _bind(monkeypatch, conn)
-    return TestClient(app)
+    return TestClient(app, base_url="http://localhost")
 
 
 def _accounts(client: TestClient) -> None:
@@ -145,7 +145,7 @@ def test_a_fixture_database_is_a_409(
     monkeypatch: pytest.MonkeyPatch, seeded: sa.Connection, folder: Path
 ) -> None:
     _bind(monkeypatch, seeded)
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
 
     assert client.get("/api/imports/files").json()["fixture_loaded"] is True
     response = client.post("/api/imports", json={"filename": FILENAME, "as_of": "2026-09-21"})

@@ -146,7 +146,7 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> TestClient:
     # The model list is LM Studio's; these tests are about preferences and must
     # not need it running. tests/test_model_choice.py fakes it in full.
     monkeypatch.setattr(model_choice, "catalog", lambda client=None: [])
-    return TestClient(app)
+    return TestClient(app, base_url="http://localhost")
 
 
 def test_a_change_saved_on_the_screen_is_what_the_next_read_sees(client: TestClient) -> None:

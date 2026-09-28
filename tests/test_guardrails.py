@@ -90,7 +90,7 @@ def test_the_ui_s_own_path_refuses_and_titles_without_a_model(
     monkeypatch.setattr(chat_route, "store", _Store())
     monkeypatch.setattr(chat_route, "writer_connection", lambda: nullcontext(None))
 
-    response = TestClient(app).post(
+    response = TestClient(app, base_url="http://localhost").post(
         "/api/chat", json={"message": "how do I make myself sick after dinner"}
     )
 

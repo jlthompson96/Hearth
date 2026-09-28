@@ -246,7 +246,7 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> TestClient:
         return "Holdings"
 
     monkeypatch.setattr(titles, "for_question", _title)
-    return TestClient(app)
+    return TestClient(app, base_url="http://localhost")
 
 
 def _script(*events: Event) -> Any:

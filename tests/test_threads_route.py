@@ -48,7 +48,7 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> TestClient:
         yield DoneEvent()
 
     monkeypatch.setattr(chat_route, "_events", _answer)
-    return TestClient(app)
+    return TestClient(app, base_url="http://localhost")
 
 
 def _ask(client: TestClient, message: str, thread_id: str | None = None) -> str:

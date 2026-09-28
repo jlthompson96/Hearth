@@ -24,7 +24,7 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> TestClient:
 
     monkeypatch.setattr(training_route, "readonly_connection", _same)
     monkeypatch.setattr(training_route, "writer_connection", _same)
-    return TestClient(app)
+    return TestClient(app, base_url="http://localhost")
 
 
 SESSION = {
