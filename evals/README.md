@@ -89,6 +89,7 @@ and is gitignored. It measured no commit, so it cannot be compared to one.
 ## The hook
 
 `make hooks` points git at `.githooks`. The pre-commit hook notices when you
-stage a change to `prompts/` or `agents/` and reminds you to re-measure. It does
+stage a change to `prompts/`, `agents/`, `steward/`, `tools/bindings.py` or
+`llm.py` and reminds you to re-measure. It does
 not run the evals and blocks nothing: a pre-commit hook that costs ten minutes
 is a hook that gets bypassed within a week.

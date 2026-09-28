@@ -523,8 +523,8 @@ and a day, it is a rate rather than a pass, and letting it into the fast loop ma
 fast loop slow — which is how it stops being run. See [evals/README.md](evals/README.md).
 
 `make hooks` installs a pre-commit reminder that notices when you stage a change to
-`prompts/`, `agents/` or `tools/bindings.py` — the files whose effect is only visible as a
-pass rate — and tells you to re-measure. It blocks nothing and runs nothing: a hook that costs ten minutes is a
+`prompts/`, `agents/`, `steward/`, `tools/bindings.py` or `llm.py` — the files whose effect
+is only visible as a pass rate — and tells you to re-measure. It blocks nothing and runs nothing: a hook that costs ten minutes is a
 hook that gets bypassed.
 
 The commands whose phase has not landed fail with a message saying so rather than a
