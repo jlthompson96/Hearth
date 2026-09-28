@@ -91,6 +91,21 @@ imported balance only with its import.
 **Exit:** all tools tested including partial-coverage cases. No LLM involved yet — and the
 project is already useful.
 
+**Addendum, 2026-09-28: a balance is carried forward up to 45 days.** Coverage was
+judged per exact date, which held for a fixture where every account has a month-end and
+not for real use: an export on the 21st and a balance typed in on the 20th made both
+dates partial totals, and every trend led with caveats. The owner chose to carry an
+account's latest balance into a date it has none, for up to 45 days — long enough to
+bridge one missed monthly export — and to name every balance carried. Each is marked on
+its date's line and listed in a second `caveat:` sentence, `Coverage.carried_caveat()`,
+which the prompt's existing rule already makes the model repeat. Past 45 days the date is
+a gap, as before. The `snapshot_coverage` view still reads each date on its own; the
+carrying is the tool's.
+
+The fixture now misses Retirement's June as well as its July, so it holds both cases:
+June, 30 days after May, is carried; July, 61 days after, is a gap whose caveat reads
+exactly as it did. The headline figure, $38,250.00 from January to August, did not move.
+
 ## Phase 4 — Model connection (1) — DONE
 
 `ChatOpenAI` against LM Studio. Structured-output smoke test.

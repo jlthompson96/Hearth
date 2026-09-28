@@ -11,8 +11,9 @@ stable across runs and machines. The evals do not read the development
 database: they rebuild this fixture in `hearth_eval` on every run.
 
 The shape of the data is deliberate. Coverage is uneven — the brokerage account
-opens partway through the year, and one month of retirement data is missing, as
-though an export skipped it. A fixture where every account has every month
+opens partway through the year, and two months of retirement data are missing,
+as though exports skipped them: one near enough to carry the last balance
+forward, one too far. A fixture where every account has every month
 would let a net worth trend look correct while the coverage handling underneath
 it was entirely broken. Body mass is likewise not one shape: this year's
 month-ends follow daily weigh-ins through the second half of last year, as a
@@ -77,8 +78,11 @@ ACCOUNTS: dict[str, tuple[str, dt.date, str, str]] = {
     "Brokerage": ("brokerage", dt.date(YEAR, 3, 1), "24000.00", "1100.00"),
 }
 
-#: An export that skipped a month. Coverage must notice.
-MISSING = {("Retirement", dt.date(YEAR, 7, 31))}
+#: Exports that skipped two months. June is 30 days after Retirement's May
+#: balance, so the net worth trend carries May's forward and names it; July is
+#: 61 days after it, past the 45-day limit, so July is a gap coverage must
+#: notice. One fixture holds both, so neither can break unseen.
+MISSING = {("Retirement", dt.date(YEAR, 6, 30)), ("Retirement", dt.date(YEAR, 7, 31))}
 
 HOLDINGS = [("VTI", "120.00000000", "230.00"), ("BND", "300.00000000", "72.00")]
 

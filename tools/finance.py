@@ -26,11 +26,20 @@ the caller, where the assumption is visible.
 import datetime as dt
 from dataclasses import dataclass
 from decimal import Decimal
+from itertools import groupby
 
 import sqlalchemy as sa
 
 CENTS = Decimal("0.01")
 PERCENT = Decimal("0.1")
+
+#: How many days an account's last recorded balance may stand in for a date it
+#: has none. Accounts are updated on different days — an export on the 21st, a
+#: balance typed in on the 20th — and summed per exact date both would be
+#: partial totals. Chosen by the owner on 2026-09-28: long enough to bridge one
+#: missed monthly export, short enough that a stale account shows as a gap.
+#: Every balance carried is named (`Coverage.carried_caveat`).
+CARRY_DAYS = 45
 
 
 class UnknownAccountError(LookupError):
@@ -46,16 +55,32 @@ class BalancePoint:
 
 
 @dataclass(frozen=True)
+class Carried:
+    """One account's balance in a total, recorded on an earlier date."""
+
+    #: The date of the total it is part of.
+    as_of: dt.date
+    label: str
+    #: When that balance was actually recorded.
+    recorded: dt.date
+
+
+@dataclass(frozen=True)
 class Coverage:
     """How much of a period the underlying data actually covers.
 
     Backfilled history is uneven across accounts. Naive summing makes net worth
     appear to jump on the day an account's data begins, which is an artifact of
     the import rather than anything that happened.
+
+    A date is incomplete when an account that existed then has no balance on it
+    or in the CARRY_DAYS before it. A balance from those days is carried into
+    the total, and listed in `carried`.
     """
 
     complete_from: dt.date | None
     incomplete_dates: tuple[dt.date, ...]
+    carried: tuple[Carried, ...] = ()
 
     @property
     def is_complete(self) -> bool:
@@ -78,6 +103,24 @@ class Coverage:
             f"{count} date(s) in this period are missing data for at least one "
             f"account ({dates}). Figures are complete only from "
             f"{self.complete_from.isoformat()} onward."
+        )
+
+    def carried_caveat(self) -> str | None:
+        """The sentence an agent must state about balances carried forward:
+        each one named, with the date it stands in for and the date it is
+        from, so no carried figure passes for one recorded that day."""
+        if not self.carried:
+            return None
+        count = len(self.carried)
+        named = "; ".join(
+            f"{c.label} on {c.as_of.isoformat()} is its balance from {c.recorded.isoformat()}"
+            for c in self.carried[:3]
+        )
+        if count > 3:
+            named += f"; and {count - 3} more"
+        return (
+            f"{count} balance(s) in these totals are an account's last recorded balance, "
+            f"carried forward from an earlier date (at most {CARRY_DAYS} days): {named}."
         )
 
 
@@ -178,33 +221,24 @@ def get_balance_history(
     )
 
 
-def _coverage(conn: sa.Connection, start: dt.date, end: dt.date) -> Coverage:
-    rows = conn.execute(
-        sa.text(
-            "select as_of, is_complete from snapshot_coverage "
-            "where as_of between :start and :end order by as_of"
-        ),
-        {"start": start, "end": end},
-    ).all()
-
-    incomplete = tuple(r.as_of for r in rows if not r.is_complete)
-    if not rows:
-        return Coverage(complete_from=None, incomplete_dates=())
+def _complete_from(dates: list[dt.date], incomplete: list[dt.date]) -> dt.date | None:
+    """The first date after the last gap: everything at or after it can be
+    compared without caveat, and everything before it cannot."""
     if not incomplete:
-        return Coverage(complete_from=rows[0].as_of, incomplete_dates=())
-
-    # Complete "from" the first date after the last gap: everything at or after
-    # it can be compared without caveat, and everything before it cannot.
-    last_gap = incomplete[-1]
-    after_gap = [r.as_of for r in rows if r.as_of > last_gap]
-    return Coverage(
-        complete_from=after_gap[0] if after_gap else None,
-        incomplete_dates=incomplete,
-    )
+        return dates[0] if dates else None
+    after_gap = [d for d in dates if d > incomplete[-1]]
+    return after_gap[0] if after_gap else None
 
 
 def get_net_worth_trend(conn: sa.Connection, start: dt.date, end: dt.date) -> NetWorthTrend:
     """Total across all accounts per snapshot date, with coverage.
+
+    Each account that existed on a date contributes its balance from that
+    date, or failing that its latest from the CARRY_DAYS before it — named in
+    `coverage.carried`. An account with neither is left out and the date is
+    incomplete. An account counts from the day it opened, as in the
+    `snapshot_coverage` view, which reads each date on its own; this is that
+    view's rule with carrying added.
 
     Liabilities are stored as negative balances, so this is a plain sum: no
     account kind gets special arithmetic hidden inside the query, and a new
@@ -212,19 +246,69 @@ def get_net_worth_trend(conn: sa.Connection, start: dt.date, end: dt.date) -> Ne
     """
     rows = conn.execute(
         sa.text(
-            "select as_of, sum(balance) as total from balance_snapshot "
-            "where as_of between :start and :end group by as_of order by as_of"
+            """
+            with dates as (
+                select distinct as_of from balance_snapshot
+                where as_of between :start and :end
+            )
+            select d.as_of, a.label, s.as_of as recorded, s.balance
+            from dates d
+            join account a
+              on ((a.opened_on is null or a.opened_on <= d.as_of)
+                  and (a.closed_on is null or a.closed_on > d.as_of))
+              -- A balance recorded on the date counts whatever the account's
+              -- dates say, as it always has.
+              or exists (
+                  select 1 from balance_snapshot x
+                  where x.account_id = a.id and x.as_of = d.as_of
+              )
+            left join lateral (
+                select b.as_of, b.balance from balance_snapshot b
+                where b.account_id = a.id
+                  and b.as_of <= d.as_of
+                  and b.as_of >= d.as_of - cast(:carry as integer)
+                order by b.as_of desc
+                limit 1
+            ) s on true
+            order by d.as_of, a.label
+            """
         ),
-        {"start": start, "end": end},
+        {"start": start, "end": end, "carry": CARRY_DAYS},
     ).all()
 
-    points = tuple(BalancePoint(as_of=r.as_of, balance=_money(r.total)) for r in rows)
+    dates: list[dt.date] = []
+    points: list[BalancePoint] = []
+    incomplete: list[dt.date] = []
+    carried: list[Carried] = []
+    for as_of, accounts in groupby(rows, key=lambda r: r.as_of):
+        found = list(accounts)
+        dates.append(as_of)
+        points.append(
+            BalancePoint(
+                as_of=as_of,
+                balance=_money(
+                    sum((r.balance for r in found if r.balance is not None), Decimal(0))
+                ),
+            )
+        )
+        if any(r.balance is None for r in found):
+            incomplete.append(as_of)
+        carried += [
+            Carried(as_of, r.label, r.recorded)
+            for r in found
+            if r.recorded is not None and r.recorded < as_of
+        ]
+
     return NetWorthTrend(
         start=start,
         end=end,
-        points=points,
-        change=_change(points),
-        coverage=_coverage(conn, start, end),
+        points=tuple(points),
+        change=_change(tuple(points)),
+        coverage=Coverage(
+            complete_from=_complete_from(dates, incomplete),
+            incomplete_dates=tuple(incomplete),
+            carried=tuple(carried),
+        ),
     )
 
 

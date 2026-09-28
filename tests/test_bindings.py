@@ -63,6 +63,19 @@ def test_a_partial_total_is_marked_on_its_own_line(_bound: None) -> None:
     assert "incomplete" not in lines[f"{YEAR}-08-31"]
 
 
+def test_a_carried_balance_is_named_on_its_line_and_in_a_caveat(_bound: None) -> None:
+    """June uses Retirement's May balance. Its line says so, and so does a
+    caveat: sentence of its own, which the agent repeats like the gap's."""
+    result = net_worth_trend.invoke({"start": FULL_YEAR[0], "end": FULL_YEAR[1]})
+    lines = {line.split()[0]: line for line in result.splitlines() if line.startswith("  ")}
+    caveats = [line for line in result.splitlines() if line.startswith("caveat: ")]
+
+    assert f"carried: Retirement from {YEAR}-05-31" in lines[f"{YEAR}-06-30"]
+    assert "carried" not in lines[f"{YEAR}-05-31"] + lines[f"{YEAR}-08-31"]
+    assert len(caveats) == 2
+    assert any("Retirement" in c and f"{YEAR}-05-31" in c for c in caveats)
+
+
 def test_net_worth_trend_reports_complete_coverage_when_it_is_complete(_bound: None) -> None:
     """August onward has every account reporting. Saying nothing about coverage
     is not the same as saying it is complete, and the agent needs the latter."""

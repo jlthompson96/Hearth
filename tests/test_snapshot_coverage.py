@@ -37,14 +37,17 @@ def test_months_before_an_account_opened_are_not_gaps(seeded: sa.Connection) -> 
 
 
 def test_a_month_an_export_skipped_is_a_gap(seeded: sa.Connection) -> None:
+    """The view reads each date on its own: Retirement's missing June and July
+    are both gaps here. Carrying a balance forward is the trend tool's
+    decision, made on top of this (tools/finance.py)."""
     incomplete = [row[0] for row in _coverage(seeded) if not row[3]]
-    assert incomplete == [dt.date(YEAR, 7, 31)]
+    assert incomplete == [dt.date(YEAR, 6, 30), dt.date(YEAR, 7, 31)]
 
 
 def test_every_other_month_is_complete(seeded: sa.Connection) -> None:
     coverage = _coverage(seeded)
     assert len(coverage) == 12
-    assert sum(1 for row in coverage if row[3]) == 11
+    assert sum(1 for row in coverage if row[3]) == 10
 
 
 def test_seeded_figures_are_exact(seeded: sa.Connection) -> None:

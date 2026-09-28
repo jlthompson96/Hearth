@@ -111,6 +111,11 @@ def _render_trend(result: NetWorthTrend, available: tuple[dt.date, dt.date] | No
     # July missing one account reads as a July that fell — which is how a
     # detailed answer came to describe "a sharp drop" that never happened.
     incomplete = set(result.coverage.incomplete_dates)
+    # A carried balance is named on its own line too, for the same reason a
+    # partial total is: a walk through the months reads each line on its own.
+    carried: dict[dt.date, list[str]] = {}
+    for c in result.coverage.carried:
+        carried.setdefault(c.as_of, []).append(f"{c.label} from {c.recorded:{ISO}}")
     lines = [
         f"net worth {result.start:{ISO}} to {result.end:{ISO}}",
         *(
@@ -120,6 +125,7 @@ def _render_trend(result: NetWorthTrend, available: tuple[dt.date, dt.date] | No
                 if p.as_of in incomplete
                 else ""
             )
+            + (f"  carried: {', '.join(carried[p.as_of])}" if p.as_of in carried else "")
             for p in result.points
         ),
         f"change over the period: {_signed(result.change)}",
@@ -134,6 +140,9 @@ def _render_trend(result: NetWorthTrend, available: tuple[dt.date, dt.date] | No
         lines.append(f"caveat: {caveat}")
     else:
         lines.append("coverage: complete for every date in this period")
+    carried_caveat = result.coverage.carried_caveat()
+    if carried_caveat:
+        lines.append(f"caveat: {carried_caveat}")
     return "\n".join(lines)
 
 
