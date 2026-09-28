@@ -21,6 +21,16 @@ net worth sits in one account, the model answered "100%" — a number no tool
 returned, worked out from a total it had misread. A share is arithmetic on two
 figures, which is exactly what rule 1 forbids, so a percentage the tools did
 not state is flagged like any other invented number.
+
+A tool's figure grounds only a figure of its own kind: a dollar amount by a
+dollar amount, a weight by a weight, a percentage by a percentage. Every number
+in a result used to count, and a result is full of numbers that are not
+figures — the day, month and year of every line, a rep count, a number of
+recordings — so "$31" passed because a line was dated the 31st. The tools write
+every figure with its unit (`tools.bindings`), which is what makes this safe.
+
+A question grounds by any number in it, because people type amounts loosely —
+"over 40000" is fairly answered "$40,000". Only its dates are set aside first.
 """
 
 import re
@@ -35,6 +45,10 @@ _WEIGHT = re.compile(
 )
 _PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s?%")
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+#: 2026-01-31, 2026-01 and 2026-Q1: the ways a tool or a person writes a date.
+_DATE = re.compile(r"\b\d{4}-(?:\d{2}-\d{2}|\d{2}|Q[1-4])\b")
+
+_KINDS = (_MONEY, _WEIGHT, _PERCENT)
 
 
 def _value(text: str) -> Decimal | None:
@@ -44,15 +58,25 @@ def _value(text: str) -> Decimal | None:
         return None
 
 
-def ungrounded(answer: str, sources: Iterable[str]) -> list[str]:
-    """The figures in `answer` whose value appears in none of `sources`, in the
-    order they appear, each once."""
-    known = {
-        v for source in sources for n in _NUMBER.findall(source) if (v := _value(n)) is not None
+def _values(pattern: re.Pattern[str], texts: Iterable[str], group: int) -> set[Decimal]:
+    return {
+        v
+        for text in texts
+        for match in pattern.finditer(_DATE.sub(" ", text))
+        if (v := _value(match.group(group))) is not None
     }
+
+
+def ungrounded(answer: str, results: Iterable[str], questions: Iterable[str] = ()) -> list[str]:
+    """The figures in `answer` that no tool result states as a figure of the
+    same kind, and no question contains as a number — in the order they appear,
+    each once."""
+    results, questions = list(results), list(questions)
+    typed = _values(_NUMBER, questions, 0)
     flagged: list[str] = []
-    for pattern in (_MONEY, _WEIGHT, _PERCENT):
-        for match in pattern.finditer(answer):
+    for kind in _KINDS:
+        known = _values(kind, results, 1) | typed
+        for match in kind.finditer(answer):
             figure = match.group(0).strip()
             if _value(match.group(1)) not in known and figure not in flagged:
                 flagged.append(figure)

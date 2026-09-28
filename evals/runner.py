@@ -203,8 +203,11 @@ def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
     # Earlier turns count through their questions and tool results, as in the
     # chat route — never through their answers.
     shown = window(case.history, answered_by) if answered_by else []
-    earlier = [t for e in shown for t in (e.question, *e.results)]
-    flags = ungrounded(text, [*results, case.question, *earlier])
+    flags = ungrounded(
+        text,
+        [*results, *(r for e in shown for r in e.results)],
+        [case.question, *(e.question for e in shown)],
+    )
     if flags:
         return False, f"figures no tool returned: {flags} in: {text[:160]!r}"
 

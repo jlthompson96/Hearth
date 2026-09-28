@@ -250,8 +250,15 @@ def _turn(
     # results and questions, never their answers: an invented figure repeated
     # is still invented.
     shown = window(history, agent) if agent else []
-    earlier = [text for e in shown for text in (e.question, *e.results)]
-    flags = [] if refusal else ungrounded(content, [*results, request.message, *earlier])
+    flags = (
+        []
+        if refusal
+        else ungrounded(
+            content,
+            [*results, *(r for e in shown for r in e.results)],
+            [request.message, *(e.question for e in shown)],
+        )
+    )
     if flags:
         yield _sse("ungrounded", {"figures": flags})
     try:
