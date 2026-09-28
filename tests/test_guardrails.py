@@ -190,3 +190,107 @@ def test_the_agent_loop_stops_a_model_that_never_stops_calling_tools(
     assert sum(isinstance(e, ToolEvent) for e in events) == loop.MAX_STEPS
     assert isinstance(events[-1], DoneEvent)
     assert f"stopped after {loop.MAX_STEPS} steps" in events[-1].reason
+
+
+# --- the agent loop's budget for tool results --------------------------------------
+
+
+class _CallsThenAnswers:
+    """Calls `flood` once per size in `sizes`, then answers. Keeps every
+    conversation it was sent, so a test can read what the model saw."""
+
+    def __init__(self, sizes: list[int]) -> None:
+        self.sizes = sizes
+        self.seen: list[list[object]] = []
+
+    def bind_tools(self, tools: object) -> "_CallsThenAnswers":
+        return self
+
+    def stream(self, conversation: list[object]) -> Iterator[object]:
+        import json
+
+        from langchain_core.messages import AIMessageChunk
+
+        self.seen.append(list(conversation))
+        step = len(self.seen)
+        if step <= len(self.sizes):
+            yield AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": "flood",
+                        "args": json.dumps({"size": self.sizes[step - 1]}),
+                        "id": f"call-{step}",
+                        "index": 0,
+                    }
+                ],
+            )
+        else:
+            yield AIMessageChunk(content="done")
+
+
+def _flooded(
+    monkeypatch: pytest.MonkeyPatch, sizes: list[int]
+) -> tuple[list[Event], _CallsThenAnswers]:
+    from langchain_core.tools import tool
+
+    from agents import loop
+
+    @tool
+    def flood(size: int) -> str:
+        """Returns `size` characters."""
+        return "x" * size
+
+    model = _CallsThenAnswers(sizes)
+    monkeypatch.setattr(loop, "chat_model", lambda: model)
+    return list(loop.run(caller="probe", system="s", question="q", tools=[flood])), model
+
+
+def test_a_tool_result_too_long_for_the_window_is_withheld(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rule 7 for what comes back rather than how often. A result larger than
+    the window can hold is replaced by a finished sentence — never cut short,
+    because a list with its end missing reads as complete."""
+    from langchain_core.messages import ToolMessage
+
+    from agents import loop
+    from agents.loop import LogEvent, ToolResultEvent
+
+    events, model = _flooded(monkeypatch, [loop.MAX_RESULT_CHARS + 1])
+
+    (result,) = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert result.result == loop.TOO_LONG
+    assert result.result.startswith("caveat: ")
+
+    # What the model read next is the sentence, not the flood.
+    shown = [m for m in model.seen[-1] if isinstance(m, ToolMessage)]
+    assert [m.content for m in shown] == [loop.TOO_LONG]
+
+    # The Model log says what happened and how large it was.
+    (ran,) = [e.entry for e in events if isinstance(e, LogEvent) and e.entry.kind == "tool"]
+    assert ran.error is not None and "withheld" in ran.error
+    assert str(loop.MAX_RESULT_CHARS + 1) in ran.error
+
+
+def test_a_result_that_fits_is_passed_on_whole(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agents import loop
+    from agents.loop import ToolResultEvent
+
+    events, _ = _flooded(monkeypatch, [loop.MAX_RESULT_CHARS])
+
+    (result,) = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert result.result == "x" * loop.MAX_RESULT_CHARS
+
+
+def test_the_budget_is_for_the_whole_turn_not_each_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two results that fit alone can still overflow the window together."""
+    from agents import loop
+    from agents.loop import ToolResultEvent
+
+    half = loop.MAX_RESULT_CHARS // 2 + 1
+    events, _ = _flooded(monkeypatch, [half, half])
+
+    first, second = [e.result for e in events if isinstance(e, ToolResultEvent)]
+    assert first == "x" * half
+    assert second == loop.TOO_LONG
