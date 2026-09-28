@@ -14,15 +14,16 @@ is 8,192 tokens and a few hundred are gone to tool schemas before the user types
 The loop streams each step. In the ordinary two-step shape — call a tool, read
 the result, answer — the first step carries no text, so nothing provisional
 reaches the UI. A model that narrated before calling a tool would briefly stream
-that narration; `TokenEvent.provisional` marks text emitted in a step that turned
-out to be a tool call, so a consumer can drop it rather than leaving it on screen
-as though it were the answer.
+that narration; a provisional `TokenEvent` then takes it back, so it is not left
+on screen, or stored, as though it were the answer. An answer cut off at the
+token limit is taken back the same way.
 """
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from time import monotonic
 from typing import Any, Literal, get_args
 
 from langchain_core.messages import AIMessageChunk, BaseMessage, ToolMessage
@@ -58,9 +59,33 @@ TOO_LONG = (
     "Ask about a shorter period."
 )
 
+#: Rule 7 for a model that will not stop: the most a specialist's step may
+#: generate, reasoning included — LM Studio counts reasoning against
+#: `max_tokens`. Measured on the host on 2026-09-28 over the heaviest eval
+#: questions, detailed answers included, 28 steps: at most 2,399 tokens, 90th
+#: percentile 2,039, median 593. 2,000 — the first guess — would have cut off
+#: one step in ten. 4,000 leaves room above the largest, and stops a model
+#: caught repeating itself before it fills the window.
+MAX_OUTPUT_TOKENS = 4000
+
+#: And the longest a turn may run, in seconds, checked before each step: the
+#: step cap bounds how many calls, this bounds how long. The same probe: turns
+#: of at most 42.7s and 3 steps, the slowest step 32s — so four such steps, the
+#: most MAX_STEPS allows, still finish. A step already under way finishes too,
+#: bounded by MAX_OUTPUT_TOKENS and the client's timeout. Before this, a turn
+#: stalled on every step could run four steps of two 120-second attempts each.
+TURN_SECONDS = 180
+
 
 @dataclass(frozen=True)
 class TokenEvent:
+    """Text of the answer as it streams.
+
+    `provisional` takes text back: the `text` most recently streamed was not
+    the answer after all — narration before a tool call, or an answer cut off
+    at the token limit — and a consumer removes it (`take_back`). The text
+    has already been shown by then, so skipping this event is not enough."""
+
     text: str
     provisional: bool = False
 
@@ -142,9 +167,15 @@ def detail_prompt(detail: Detail) -> str:
     return load_prompt(f"detail/{detail}").strip()
 
 
+def take_back(answer: str, text: str) -> str:
+    """`answer` without `text`, when `text` is what it ends with — how every
+    consumer applies a provisional `TokenEvent`."""
+    return answer[: -len(text)] if text and answer.endswith(text) else answer
+
+
 def bound(tools: list[BaseTool]) -> Any:
-    """The chat model a specialist calls, with its tools bound."""
-    return chat_model().bind_tools(tools)
+    """The chat model a specialist calls, capped and with its tools bound."""
+    return chat_model(max_tokens=MAX_OUTPUT_TOKENS).bind_tools(tools)
 
 
 def opening(
@@ -186,8 +217,12 @@ def run(
     conversation = opening(system, question, history)
     #: Tool output passed to the model so far this turn, against MAX_RESULT_CHARS.
     carried = 0
+    deadline = monotonic() + TURN_SECONDS
 
-    for _step in range(MAX_STEPS):
+    for step in range(MAX_STEPS):
+        if step and monotonic() > deadline:
+            yield DoneEvent(f"stopped after {TURN_SECONDS} seconds without a final answer")
+            return
         gathered: AIMessageChunk | None = None
         emitted: list[str] = []
         body = request_body(model, conversation, stream=True)
@@ -209,6 +244,16 @@ def run(
 
         if gathered is None:
             yield DoneEvent("the model returned nothing")
+            return
+
+        if gathered.response_metadata.get("finish_reason") == "length":
+            # Cut off mid-answer, or mid-tool-call. Neither is usable, and a
+            # truncated answer reads as a shorter one, so it is taken back.
+            if emitted:
+                yield TokenEvent("".join(emitted), provisional=True)
+            yield DoneEvent(
+                f"stopped at the {MAX_OUTPUT_TOKENS}-token limit before the answer was finished"
+            )
             return
 
         calls = gathered.tool_calls or []

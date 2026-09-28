@@ -171,6 +171,52 @@ def test_provisional_tokens_are_flagged(
     assert payloads[0]["provisional"] is True
 
 
+def test_narration_taken_back_is_not_kept_as_the_answer(
+    client: TestClient, memory: _MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The events as the real loop sends them: narration streamed as ordinary
+    tokens before the step turns out to be a tool call, then the same text
+    again, marked provisional, to take it back. Skipping the provisional token
+    is not enough — the narration was already kept by then."""
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(
+            TokenEvent("Let me "),
+            TokenEvent("check."),
+            TokenEvent("Let me check.", provisional=True),
+            ToolEvent("net_worth_trend", {"start": "2026-01-01", "end": "2026-09-21"}),
+            ToolResultEvent("net_worth_trend", "change over the period: +$38,250.00"),
+            TokenEvent("It rose $38,250.00."),
+            DoneEvent(),
+        ),
+    )
+
+    client.post("/api/chat", json={"message": "how has my net worth moved"})
+
+    (answer,) = [m for m in memory.messages if m["role"] == "assistant"]
+    assert answer["content"] == "It rose $38,250.00."
+
+
+def test_an_answer_taken_back_whole_is_not_stored(
+    client: TestClient, memory: _MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cut off at the token limit: nothing incomplete is saved as an answer."""
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(
+            TokenEvent("Your net worth rose by"),
+            TokenEvent("Your net worth rose by", provisional=True),
+            DoneEvent("stopped at the 2000-token limit before the answer was finished"),
+        ),
+    )
+
+    client.post("/api/chat", json={"message": "how has my net worth moved"})
+
+    assert [m for m in memory.messages if m["role"] == "assistant"] == []
+
+
 def test_an_exception_mid_stream_becomes_an_error_event(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

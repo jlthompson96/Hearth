@@ -182,6 +182,13 @@ def test_the_guardrails_are_shown_locked(client: TestClient) -> None:
         for item in section["items"]
     }
 
-    for guardrail in ("Routing hops per turn", "Model calls per answer", "Follow-up window"):
+    for guardrail in (
+        "Routing hops per turn",
+        "Model calls per answer",
+        "Tokens per model call",
+        "Seconds per answer",
+        "Tool output per answer",
+        "Follow-up window",
+    ):
         assert items[guardrail]["locked"] is True
     assert items["Routing hops per turn"]["value"] == "6"

@@ -28,7 +28,7 @@ import llm
 import model_choice
 import preferences
 from agents import conversation
-from agents.loop import MAX_STEPS
+from agents.loop import MAX_OUTPUT_TOKENS, MAX_RESULT_CHARS, MAX_STEPS, TURN_SECONDS
 from api.refusals import REFUSALS
 from config import get_model_settings, get_settings
 from db.session import readonly_connection
@@ -160,6 +160,13 @@ def _configuration() -> list[ConfigSection]:
                 item(label="Routing hops per turn", value=str(MAX_HOPS), locked=True),
                 item(label="Router attempts", value=str(ATTEMPTS), locked=True),
                 item(label="Model calls per answer", value=str(MAX_STEPS), locked=True),
+                item(label="Tokens per model call", value=f"{MAX_OUTPUT_TOKENS:,}", locked=True),
+                item(label="Seconds per answer", value=str(TURN_SECONDS), locked=True),
+                item(
+                    label="Tool output per answer",
+                    value=f"{MAX_RESULT_CHARS:,} characters",
+                    locked=True,
+                ),
                 item(
                     label="Follow-up window",
                     value=(
