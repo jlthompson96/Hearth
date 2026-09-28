@@ -76,10 +76,19 @@ install: $(VENV) web/node_modules
 # is the running process, so `pip install --upgrade pip` fails outright and the
 # venv is left half-built — with the directory present, so make considers the
 # target done and never installs the requirements.
+#
+# requirements.lock, when present, is passed as constraints (-c), not as
+# requirements (-r): it pins the version of whatever gets installed, and never
+# installs anything by itself. It is frozen on the GPU host, where the evals
+# are measured, and carries that platform's packages (colorama, tzdata); as
+# constraints those are ignored on the Mac, and the Mac's own (uvloop) install
+# unpinned. So one lock serves both machines without pretending to be both.
+LOCK := $(wildcard requirements.lock)
+
 $(VENV):
 	$(PYTHON) -m venv $(VENV)
 	$(PY) -m pip install --upgrade pip
-	$(PY) -m pip install -r requirements-dev.txt
+	$(PY) -m pip install -r requirements-dev.txt $(if $(LOCK),-c $(LOCK))
 
 # `cd web && npm`, not `npm --prefix web`: on Windows npm resolves a relative
 # --prefix against the wrong root and looks for package.json beside the
@@ -137,10 +146,19 @@ backup: install
 start: install
 	$(PY) -m scripts.start
 
-## freeze — turn requirements.txt ranges into exact pins, once resolved
+## freeze — pin what is installed, as constraints for every later install
+#
+# Run it on the GPU host, from the venv the evals were measured in: the lock is
+# a record of that environment. A pass rate recorded under one lock and one
+# under another were not measured against the same client code — each result
+# file names the versions that matter (evals/fingerprint.py).
 freeze: install
-	$(PIP) freeze --exclude-editable > requirements.lock
-	echo "Wrote requirements.lock — commit it."
+	@printf '%s\n' \
+		"# Exact versions from the GPU host's venv, used as pip constraints (-c)." \
+		"# Written by make freeze; regenerate there, not by hand. See the Makefile." \
+		> requirements.lock
+	$(PY) -m pip freeze --exclude-editable >> requirements.lock
+	@echo "Wrote requirements.lock — commit it."
 
 clean:
 	rm -rf $(VENV) web/node_modules web/dist .pytest_cache .mypy_cache .ruff_cache

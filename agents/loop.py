@@ -142,6 +142,25 @@ def detail_prompt(detail: Detail) -> str:
     return load_prompt(f"detail/{detail}").strip()
 
 
+def bound(tools: list[BaseTool]) -> Any:
+    """The chat model a specialist calls, with its tools bound."""
+    return chat_model().bind_tools(tools)
+
+
+def opening(
+    system: str, question: str, history: Sequence[Exchange] = ()
+) -> list[tuple[str, str] | BaseMessage]:
+    """What the model reads on a turn's first step: its prompt, the earlier
+    exchanges it is shown, and the question. `run` starts from this, and
+    `evals.fingerprint` hashes it, so the two cannot describe different
+    requests."""
+    conversation: list[tuple[str, str] | BaseMessage] = [("system", system)]
+    for exchange in history:
+        conversation += [("human", exchange.question), ("ai", exchange.answer)]
+    conversation.append(("human", question))
+    return conversation
+
+
 def run(
     *,
     caller: str,
@@ -161,13 +180,10 @@ def run(
     `caller`, including a model call that failed — the failed one is the entry
     most worth reading.
     """
-    model = chat_model().bind_tools(tools)
+    model = bound(tools)
     by_name = {t.name: t for t in tools}
 
-    conversation: list[tuple[str, str] | BaseMessage] = [("system", system)]
-    for exchange in history:
-        conversation += [("human", exchange.question), ("ai", exchange.answer)]
-    conversation.append(("human", question))
+    conversation = opening(system, question, history)
     #: Tool output passed to the model so far this turn, against MAX_RESULT_CHARS.
     carried = 0
 

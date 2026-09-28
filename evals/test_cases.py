@@ -14,7 +14,7 @@ import pytest
 from pydantic import ValidationError
 
 from config import get_model_settings
-from evals import runner
+from evals import fingerprint, runner
 from evals.runner import Case, Result
 
 CASES, TODAY, RUNS = runner.load()
@@ -41,12 +41,21 @@ def _model_available() -> tuple[str, str | None]:
 
 @pytest.fixture(scope="session", autouse=True)
 def _record(_model_available: tuple[str, str | None]) -> object:
+    # Taken before the first case rather than after the last: a fingerprint
+    # that cannot be built should fail the run in a second, not after ten
+    # minutes of model calls.
+    packages, prompts = fingerprint.package_versions(), fingerprint.prompt_hashes(TODAY)
     yield
     if not _RESULTS:
         return
     model, effort = _model_available
     path = runner.record(
-        _RESULTS, model=model, dirty=runner.working_tree_dirty(), reasoning_effort=effort
+        _RESULTS,
+        model=model,
+        dirty=runner.working_tree_dirty(),
+        reasoning_effort=effort,
+        packages=packages,
+        prompts=prompts,
     )
     passing = sum(1 for r in _RESULTS if r.ok)
     runs_passed = sum(r.passed for r in _RESULTS)

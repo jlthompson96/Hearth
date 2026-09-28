@@ -1,8 +1,8 @@
 # Runtime. Stack is decided in CLAUDE.md — do not substitute.
 #
-# Ranges, not pins: these were written on a machine that could not run pip, so
-# nothing here has been resolved against an index. Run `make freeze` on the box
-# that actually installs to turn this into exact pins.
+# Ranges, not pins: what the code needs. The exact versions the evals were
+# measured against are in requirements.lock, which `make install` applies as
+# constraints; `make freeze` rewrites it on the GPU host.
 
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0

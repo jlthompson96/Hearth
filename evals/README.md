@@ -86,6 +86,17 @@ different measurement, not a comparable one.
 A run against a tree with uncommitted changes is written as `<sha>-dirty.json`
 and is gitignored. It measured no commit, so it cannot be compared to one.
 
+It also records what the model was sent (`fingerprint.py`): `prompts` is a short
+hash of each request the evals measure — the router with and without Errand, and
+each specialist at each detail level — built by langchain-openai's own payload
+builder with the question left out, and `packages` the versions that build it.
+Equal hashes mean two runs sent the same prompts, schemas and settings. Unequal
+hashes mean something the model reads changed, whether or not a file under
+`prompts/` did: a docstring pydantic puts in a schema, a constant in
+`steward/router.py`, or a langchain-openai upgrade. `python -m evals.fingerprint`
+prints both without a run, to compare against a recorded one. Results recorded
+before 2026-09-28 have neither.
+
 ## The hook
 
 `make hooks` points git at `.githooks`. The pre-commit hook notices when you

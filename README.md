@@ -220,8 +220,11 @@ window, not disk or RAM, is the scarce resource.
 **Hearth is developed on a Mac and hosted on the RTX 4060 Ti machine.** The data layer,
 ingestion and query tools are ordinary portable software and are built on either. Anything
 model-dependent is only meaningful on the host: the Phase 4 smoke test, and every eval
-pass rate. A pass rate measured anywhere else does not characterise the target, and
-`make freeze` produces a lockfile for one machine's architecture, not both.
+pass rate. A pass rate measured anywhere else does not characterise the target. For
+the same reason `make freeze` is run on the host: `requirements.lock` records the
+environment the evals were measured in, and both machines install under it as
+constraints, which pin a version without forcing the host's Windows-only packages
+onto the Mac.
 
 ## Setup
 
@@ -483,7 +486,7 @@ make backup       # a compressed dump of the database, outside the repository
 
 Also available: `make up` / `make down` / `make logs` for infrastructure alone, `make fmt`
 to apply formatting, `make hooks` to install the pre-commit reminder, `make freeze` to
-resolve `requirements.txt`'s ranges into exact pins, and `make clean` to remove both
+pin the installed versions into `requirements.lock`, and `make clean` to remove both
 toolchains.
 
 ## Running it day to day
@@ -521,6 +524,11 @@ loop you run after every edit. `make eval` measures behaviour against the real m
 The split matters because a behavioural number is not a test result. It belongs to a model
 and a day, it is a rate rather than a pass, and letting it into the fast loop makes the
 fast loop slow — which is how it stops being run. See [evals/README.md](evals/README.md).
+
+Each recorded run also names the package versions and hashes every request it
+measured, so two runs can be seen to have sent the model the same prompts — or
+not, even when no prompt file changed. `requirements.lock` holds the exact
+versions from the GPU host and `make install` applies it as constraints.
 
 `make hooks` installs a pre-commit reminder that notices when you stage a change to
 `prompts/`, `agents/`, `steward/`, `tools/bindings.py` or `llm.py` — the files whose effect
