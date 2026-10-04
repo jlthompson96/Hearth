@@ -160,8 +160,7 @@ def test_allocation_declares_a_substituted_date(_bound: None) -> None:
     result = allocation.invoke({"as_of": f"{YEAR}-12-15"})
 
     assert f"{YEAR}-11-30" in result
-    assert "caveat:" in result
-    assert "You asked about" in result
+    assert "caveat: These are your holdings as of" in result
     assert f"{YEAR}-12-15" in result
 
 
@@ -276,8 +275,7 @@ def test_an_unlogged_lift_is_a_sentence_saying_it_is_a_name_not_a_gap(_bound: No
     )
 
     assert result.startswith("caveat: ")
-    assert "no lift called 'hack squat' logged" in result
-    assert "never logged, not a period without records" in result
+    assert "haven't logged a lift under the name 'hack squat'" in result
     assert "back squat" in result and "bench press" in result
     assert "NO DATA" not in result, "an unknown name is not an empty period"
 
@@ -305,7 +303,7 @@ def test_spelling_is_forgiven_but_a_different_word_is_not(_bound: None) -> None:
         {"exercise": "bench", "start": FULL_YEAR[0], "end": FULL_YEAR[1]}
     )
 
-    assert "no lift called 'bench' logged" in result
+    assert "haven't logged a lift under the name 'bench'" in result
 
 
 def test_body_metric_trend_reports_values_exactly_as_recorded(_bound: None) -> None:
@@ -382,7 +380,7 @@ def test_an_unrecorded_metric_lists_what_is_recorded(_bound: None) -> None:
     )
 
     assert result.startswith("caveat: ")
-    assert "no measurement called 'body fat' logged" in result
+    assert "haven't logged a measurement under the name 'body fat'" in result
     assert "body_mass" in result
 
 

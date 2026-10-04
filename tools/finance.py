@@ -24,6 +24,7 @@ the caller, where the assumption is visible.
 """
 
 import datetime as dt
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from itertools import groupby
@@ -87,22 +88,25 @@ class Coverage:
         return not self.incomplete_dates
 
     def caveat(self) -> str | None:
-        """The sentence an agent must state before describing the trend."""
+        """The sentence an agent must state before describing the trend.
+
+        Written to be said aloud, because it is: the agent repeats it word for
+        word, first. "1 date(s) in this period are missing data" was accurate
+        and made every answer that carried it open like a log file.
+        """
         if self.is_complete:
             return None
-        count = len(self.incomplete_dates)
-        dates = ", ".join(d.isoformat() for d in self.incomplete_dates[:3])
-        if count > 3:
-            dates += f", and {count - 3} more"
+        when = _dates_in_words(self.incomplete_dates)
         if self.complete_from is None:
+            # The period ends on a gap. Earlier dates may be complete, so this
+            # says only what is true of every such period.
             return (
-                f"No date in this period has data for every account "
-                f"({count} incomplete: {dates}). Treat the totals as partial."
+                f"Your records for {when} are missing at least one account, "
+                f"so treat these totals as partial."
             )
         return (
-            f"{count} date(s) in this period are missing data for at least one "
-            f"account ({dates}). Figures are complete only from "
-            f"{self.complete_from.isoformat()} onward."
+            f"Your records for {when} are missing at least one account, so these "
+            f"totals are complete only from {self.complete_from.isoformat()} onward."
         )
 
     def carried_caveat(self) -> str | None:
@@ -118,10 +122,22 @@ class Coverage:
         )
         if count > 3:
             named += f"; and {count - 3} more"
+        some = "One of these totals uses" if count == 1 else "Some of these totals use"
         return (
-            f"{count} balance(s) in these totals are an account's last recorded balance, "
-            f"carried forward from an earlier date (at most {CARRY_DAYS} days): {named}."
+            f"{some} an account's last recorded balance, carried forward "
+            f"(at most {CARRY_DAYS} days): {named}."
         )
+
+
+def _dates_in_words(dates: Sequence[dt.date]) -> str:
+    """ "2026-06-30 and 2026-07-31", as a sentence lists them. ISO, always: the
+    evals assert the date verbatim, and a model handed "July 31" copies that."""
+    shown = [d.isoformat() for d in dates[:3]]
+    if len(dates) > 3:
+        return f"{', '.join(shown)} and {len(dates) - 3} more dates"
+    if len(shown) == 1:
+        return shown[0]
+    return f"{', '.join(shown[:-1])} and {shown[-1]}"
 
 
 @dataclass(frozen=True)

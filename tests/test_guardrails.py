@@ -163,6 +163,10 @@ def test_the_agent_loop_stops_a_model_that_never_stops_calling_tools(
         def bind_tools(self, tools: object) -> "_Relentless":
             return self
 
+        def bind(self, **_: object) -> "_Relentless":
+            # Offered no tools on the last step, it calls one anyway.
+            return self
+
         def stream(self, conversation: object) -> Iterator[AIMessageChunk]:
             _Relentless.streamed += 1
             yield AIMessageChunk(
@@ -187,7 +191,8 @@ def test_the_agent_loop_stops_a_model_that_never_stops_calling_tools(
     events = list(loop.run(caller="probe", system="s", question="q", tools=[probe]))
 
     assert _Relentless.streamed == loop.MAX_STEPS
-    assert sum(isinstance(e, ToolEvent) for e in events) == loop.MAX_STEPS
+    # The last step was offered no tools, so its call is not run.
+    assert sum(isinstance(e, ToolEvent) for e in events) == loop.MAX_STEPS - 1
     assert isinstance(events[-1], DoneEvent)
     assert f"stopped after {loop.MAX_STEPS} steps" in events[-1].reason
 

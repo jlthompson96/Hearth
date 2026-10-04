@@ -126,7 +126,24 @@ def test_a_period_with_no_complete_date_says_so(seeded: sa.Connection) -> None:
     assert trend.coverage.complete_from is None
     caveat = trend.coverage.caveat()
     assert caveat is not None
-    assert "No date" in caveat
+    assert f"{YEAR}-07-31" in caveat
+    assert "partial" in caveat
+    assert "complete only from" not in caveat
+
+
+def test_a_period_ending_on_a_gap_does_not_claim_every_date_is_partial(
+    seeded: sa.Connection,
+) -> None:
+    """May is complete and July is not. A period ending on the gap has no date
+    to be complete *from*, but the old sentence — "No date in this period has
+    data for every account" — said May was partial too."""
+    trend = get_net_worth_trend(seeded, dt.date(YEAR, 5, 1), dt.date(YEAR, 7, 31))
+
+    assert trend.coverage.complete_from is None
+    caveat = trend.coverage.caveat()
+    assert caveat is not None
+    assert f"{YEAR}-05-31" not in caveat
+    assert "No date" not in caveat
 
 
 # --- carrying a balance forward ------------------------------------------------

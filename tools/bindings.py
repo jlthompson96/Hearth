@@ -154,9 +154,8 @@ def _render_allocation(result: Allocation) -> str:
         # Answering a question about today with March's data without saying so
         # is how a figure stops being trustworthy without ever being wrong.
         lines.append(
-            f"caveat: You asked about {result.as_of_requested:{ISO}}; the most "
-            f"recent holdings on or before that date are from "
-            f"{result.as_of_used:{ISO}}."
+            f"caveat: These are your holdings as of {result.as_of_used:{ISO}}, the "
+            f"latest you have recorded on or before {result.as_of_requested:{ISO}}."
         )
     lines += [f"  {s.symbol}  {_money(s.market_value)}  {s.percentage}%" for s in result.slices]
     # Named, not just totalled: handed a bare "total", the model reported it as
@@ -395,11 +394,10 @@ def _unknown_name(kind: str, asked: str, known: list[str]) -> str:
     have = f"the {kind}s in your log are {names}" if known else f"your log has no {kind}s at all"
     # The names go in the first sentence. Handed them in a second one, the model
     # repeated the first and stopped, and the answer never said what was logged
-    # — which is the half that helps.
-    return (
-        f"caveat: You have no {kind} called {asked!r} logged — {have} — so this is "
-        f"a name that was never logged, not a period without records."
-    )
+    # — which is the half that helps. "Under that name" is what keeps it from
+    # reading as a period without records; the old tail said so to the model
+    # and, being repeated verbatim, to the person as well.
+    return f"caveat: You haven't logged a {kind} under the name {asked!r} — {have}."
 
 
 def _mixed_units(mixed: MixedUnitsError) -> str:
@@ -407,9 +405,9 @@ def _mixed_units(mixed: MixedUnitsError) -> str:
     across units, and a model handed them would make that subtraction."""
     units = " and ".join(mixed.units)
     return (
-        f"caveat: {mixed.name} is recorded in both {units} over this period, so no change "
-        f"can be given — the figures are in different units. Ask about a period logged in "
-        f"one unit."
+        f"caveat: Your {mixed.name} is logged in both {units} over this period, so I "
+        f"can't give you a change — the figures are in different units. A period logged "
+        f"in one unit would work."
     )
 
 
