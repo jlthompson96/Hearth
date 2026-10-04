@@ -186,7 +186,7 @@ def test_the_agent_loop_stops_a_model_that_never_stops_calling_tools(
         """A tool that always has another answer."""
         return "ok"
 
-    monkeypatch.setattr(loop, "chat_model", lambda: _Relentless())
+    monkeypatch.setattr(loop, "chat_model", lambda **_: _Relentless())
 
     events = list(loop.run(caller="probe", system="s", question="q", tools=[probe]))
 
@@ -197,54 +197,121 @@ def test_the_agent_loop_stops_a_model_that_never_stops_calling_tools(
     assert f"stopped after {loop.MAX_STEPS} steps" in events[-1].reason
 
 
-def test_the_last_step_is_offered_no_tools_and_answers(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A model that looks something up on every step it can. "Which account grew
-    the most?" did exactly this — one account per step — and the cap ended the
-    turn with nothing on screen. The last step is sent unbound, so it answers
-    from what it fetched, and the cap still counts the same model calls."""
+# --- the agent loop's limits on tokens and time ------------------------------------
+
+
+class _Streams:
+    """Streams `chunks` as one step; records the kwargs it was built with."""
+
+    def __init__(self, *chunks: object) -> None:
+        self.chunks = chunks
+        self.built: dict[str, object] = {}
+
+    def bind_tools(self, tools: object) -> "_Streams":
+        return self
+
+    def stream(self, conversation: object) -> Iterator[object]:
+        yield from self.chunks
+
+
+def test_every_specialist_step_is_capped_in_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rule 7 for a model that will not stop talking: without a cap, a 4B model
+    caught repeating itself runs until the context window is full."""
+    from langchain_core.messages import AIMessageChunk
+
+    from agents import loop
+
+    model = _Streams(AIMessageChunk(content="An answer."))
+
+    def build(**kwargs: object) -> _Streams:
+        model.built = kwargs
+        return model
+
+    monkeypatch.setattr(loop, "chat_model", build)
+
+    list(loop.run(caller="probe", system="s", question="q", tools=[]))
+
+    assert model.built["max_tokens"] == loop.MAX_OUTPUT_TOKENS
+
+
+def test_an_answer_cut_off_at_the_token_limit_is_taken_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An answer stopped mid-sentence reads as a shorter answer. It is taken
+    back — shown, then withdrawn — and the turn says why it stopped."""
+    from langchain_core.messages import AIMessageChunk
+
+    from agents import loop
+    from agents.loop import DoneEvent, TokenEvent
+
+    model = _Streams(
+        AIMessageChunk(content="Your net worth "),
+        AIMessageChunk(content="rose by", response_metadata={"finish_reason": "length"}),
+    )
+    monkeypatch.setattr(loop, "chat_model", lambda **_: model)
+
+    events = list(loop.run(caller="probe", system="s", question="q", tools=[]))
+    tokens = [e for e in events if isinstance(e, TokenEvent)]
+
+    assert tokens[-1] == TokenEvent("Your net worth rose by", provisional=True)
+    assert isinstance(events[-1], DoneEvent)
+    assert f"{loop.MAX_OUTPUT_TOKENS}-token limit" in events[-1].reason
+
+
+def test_a_turn_past_its_deadline_stops_before_another_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The step cap bounds how many calls; this bounds how long. Each call
+    here takes just over half the budget, so the third is never made."""
     import json
 
     from langchain_core.messages import AIMessageChunk
     from langchain_core.tools import tool
 
     from agents import loop
-    from agents.loop import DoneEvent, TokenEvent, ToolEvent
+    from agents.loop import DoneEvent
 
-    class _LooksUpWhileItCan:
-        def __init__(self, tools: bool) -> None:
-            self.tools = tools
+    now = [1000.0]
+    monkeypatch.setattr(loop, "monotonic", lambda: now[0])
 
-        def bind_tools(self, tools: object) -> "_LooksUpWhileItCan":
-            return _LooksUpWhileItCan(tools=True)
+    class _Slow:
+        streamed = 0
 
-        def bind(self, **kwargs: object) -> "_LooksUpWhileItCan":
-            assert "tools" not in kwargs
-            return _LooksUpWhileItCan(tools=False)
+        def bind_tools(self, tools: object) -> "_Slow":
+            return self
 
         def stream(self, conversation: object) -> Iterator[AIMessageChunk]:
-            if not self.tools:
-                yield AIMessageChunk(content="answered from what was fetched")
-                return
+            _Slow.streamed += 1
+            now[0] += loop.TURN_SECONDS / 2 + 1
             yield AIMessageChunk(
                 content="",
                 tool_call_chunks=[
-                    {"name": "probe", "args": json.dumps({"x": "more"}), "id": "c", "index": 0}
+                    {"name": "probe", "args": json.dumps({"x": "a"}), "id": "c", "index": 0}
                 ],
             )
 
     @tool
     def probe(x: str) -> str:
-        """A tool that always has another account to fetch."""
+        """Always has another answer."""
         return "ok"
 
-    monkeypatch.setattr(loop, "chat_model", lambda: _LooksUpWhileItCan(tools=False))
+    monkeypatch.setattr(loop, "chat_model", lambda **_: _Slow())
 
     events = list(loop.run(caller="probe", system="s", question="q", tools=[probe]))
 
-    assert sum(isinstance(e, ToolEvent) for e in events) == loop.MAX_STEPS - 1
-    answer = "".join(e.text for e in events if isinstance(e, TokenEvent) and not e.provisional)
-    assert answer == "answered from what was fetched"
-    assert isinstance(events[-1], DoneEvent) and events[-1].reason == "complete"
+    assert _Slow.streamed == 2
+    assert isinstance(events[-1], DoneEvent)
+    assert f"stopped after {loop.TURN_SECONDS} seconds" in events[-1].reason
+
+
+def test_taking_back_removes_exactly_the_text_that_was_streamed() -> None:
+    from agents.loop import take_back
+
+    assert take_back("Let me check. ", "Let me check. ") == ""
+    assert take_back("Earlier. Let me check.", "Let me check.") == "Earlier. "
+    # Not what was streamed last: nothing to take back.
+    assert take_back("An answer.", "Let me check.") == "An answer."
+    assert take_back("An answer.", "") == "An answer."
 
 
 # --- the agent loop's budget for tool results --------------------------------------
@@ -297,7 +364,7 @@ def _flooded(
         return "x" * size
 
     model = _CallsThenAnswers(sizes)
-    monkeypatch.setattr(loop, "chat_model", lambda: model)
+    monkeypatch.setattr(loop, "chat_model", lambda **_: model)
     return list(loop.run(caller="probe", system="s", question="q", tools=[flood])), model
 
 

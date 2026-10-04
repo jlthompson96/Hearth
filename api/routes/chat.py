@@ -53,6 +53,7 @@ from agents.loop import (
     TokenEvent,
     ToolEvent,
     ToolResultEvent,
+    take_back,
 )
 from db.writer import writer_connection
 from history import model_log, store, titles
@@ -204,7 +205,9 @@ def _turn(
         for item in events:
             match item:
                 case TokenEvent(text=text, provisional=provisional):
-                    if not provisional:
+                    if provisional:
+                        answer = [take_back("".join(answer), text)]
+                    else:
                         answer.append(text)
                     yield _sse("token", {"text": text, "provisional": provisional})
                 case ToolEvent(name=name, args=args):
