@@ -229,6 +229,20 @@ REASONING_EFFORT = "none"
 #: it did not.
 ATTEMPTS = 2
 
+#: Rule 7 for the router: the most one routing reply may generate. Every other
+#: model call had a cap and this one did not. The reply is a two-field JSON
+#: object of about twenty tokens with reasoning off, so 256 never binds a
+#: well-formed decision and stops one that runs on. Set on 2026-10-07 on a
+#: machine with no Model log to measure against; on the host, check it with
+#:     select max(output_tokens) from model_log where kind = 'route';
+#: A reply cut off at the cap is unreadable, and is retried like any other.
+ROUTER_MAX_TOKENS = 256
+
+#: And how long one routing call may take. Measured at 0.41s a call with
+#: reasoning off (2026-09-21); the client default of 120s let a stalled router
+#: hold a turn for minutes before the specialist's own limits began.
+ROUTER_TIMEOUT = 30.0
+
 #: What an unreadable reply looks like on the way back. A reply that does not
 #: parse — empty, or not the schema — comes back as `parsing_error` beside the
 #: raw message; these are the ones raised instead: the model stopping on length
@@ -252,6 +266,8 @@ def routing_request(
         decision_schema(with_errand),
         temperature=temperature,
         reasoning_effort=REASONING_EFFORT,
+        max_tokens=ROUTER_MAX_TOKENS,
+        timeout=ROUTER_TIMEOUT,
     )
     asked = [("system", system_prompt(with_errand)), ("human", message(question, previous))]
     return model, asked

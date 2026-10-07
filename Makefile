@@ -57,7 +57,7 @@ eval: install
 ## hooks — point git at .githooks (tracked, unlike .git/hooks)
 hooks:
 	git config core.hooksPath .githooks
-	@echo "pre-commit installed: warns when prompts/, agents/, steward/, tools/bindings.py or llm.py change without a fresh eval run"
+	@echo "pre-commit installed: warns when a path in .githooks/watched-paths changes without a fresh eval run"
 
 ## lint — ruff + mypy
 lint: install

@@ -48,9 +48,44 @@ def test_every_request_the_evals_measure_is_hashed() -> None:
         "steward",
         "steward+errand",
         *(f"{agent}/{level}" for agent in ("tally", "forge") for level in DETAILS),
+        *(f"{agent}/{level}/final" for agent in ("tally", "forge") for level in DETAILS),
+        "title",
     }
     # Distinct requests, distinct hashes.
     assert len(set(hashes.values())) == len(hashes)
+
+
+def test_the_last_step_is_hashed_apart_from_the_steps_before_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The last step is built by its own function, with no tools and its own
+    settings. Its cap went missing once without any hash noticing, because only
+    the first step was hashed."""
+    from agents import loop
+    from llm import chat_model
+
+    before = fingerprint.prompt_hashes(TODAY)
+
+    monkeypatch.setattr(loop, "answer_only", lambda: chat_model(max_tokens=1).bind())
+
+    assert _changed(before, fingerprint.prompt_hashes(TODAY)) == {
+        f"{agent}/{level}/final" for agent in ("tally", "forge") for level in DETAILS
+    }
+
+
+def test_a_title_prompt_edit_changes_only_the_title_s_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from history import titles
+
+    before = fingerprint.prompt_hashes(TODAY)
+
+    def edited(name: str) -> str:
+        return load_prompt(name) + ("\nOne more sentence." if name == "title" else "")
+
+    monkeypatch.setattr(titles, "load_prompt", edited)
+
+    assert _changed(before, fingerprint.prompt_hashes(TODAY)) == {"title"}
 
 
 def test_the_same_code_hashes_the_same() -> None:
@@ -67,8 +102,9 @@ def test_a_prompt_edit_changes_only_that_specialist_s_hashes(
 
     monkeypatch.setattr(tally, "load_prompt", edited)
 
+    # Every step of Tally's reads its prompt, the last one included.
     assert _changed(before, fingerprint.prompt_hashes(TODAY)) == {
-        f"tally/{level}" for level in DETAILS
+        f"tally/{level}{step}" for level in DETAILS for step in ("", "/final")
     }
 
 

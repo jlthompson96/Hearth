@@ -34,7 +34,13 @@ from config import get_model_settings, get_settings
 from db.session import readonly_connection
 from db.writer import writer_connection
 from steward.graph import MAX_HOPS
-from steward.router import ATTEMPTS, REASONING_EFFORT, ConstrainedJSONRouter
+from steward.router import (
+    ATTEMPTS,
+    REASONING_EFFORT,
+    ROUTER_MAX_TOKENS,
+    ROUTER_TIMEOUT,
+    ConstrainedJSONRouter,
+)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -137,7 +143,10 @@ def _configuration() -> list[ConfigSection]:
                     label="Context window",
                     value=f"{CONTEXT_TOKENS:,} tokens",
                     locked=True,
-                    note="A chosen model is loaded at this length",
+                    note=(
+                        "Checked before each question; a model not loaded is loaded at this "
+                        "length, and one loaded at another is refused until reloaded"
+                    ),
                 ),
                 item(
                     label="Specialists reason",
@@ -159,6 +168,12 @@ def _configuration() -> list[ConfigSection]:
                 item(label="Routing", value=ConstrainedJSONRouter.name, locked=True),
                 item(label="Routing hops per turn", value=str(MAX_HOPS), locked=True),
                 item(label="Router attempts", value=str(ATTEMPTS), locked=True),
+                item(
+                    label="Tokens per routing call",
+                    value=f"{ROUTER_MAX_TOKENS:,}",
+                    locked=True,
+                    note=f"And {ROUTER_TIMEOUT:.0f} seconds",
+                ),
                 item(label="Model calls per answer", value=str(MAX_STEPS), locked=True),
                 item(label="Tokens per model call", value=f"{MAX_OUTPUT_TOKENS:,}", locked=True),
                 item(label="Seconds per answer", value=str(TURN_SECONDS), locked=True),
