@@ -13,6 +13,7 @@ import os
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 import sqlalchemy as sa
@@ -55,12 +56,22 @@ def _urls() -> tuple[URL, URL, URL]:
     )
 
 
+def _unavailable(reason: str) -> NoReturn:
+    """No database to test against: skip, loudly — unless HEARTH_REQUIRE_DB is
+    set, as CI sets it. There a missing database is a broken setup, and a run
+    that skipped every database test would report green having proved
+    nothing."""
+    if os.environ.get("HEARTH_REQUIRE_DB", "").strip() not in ("", "0"):
+        pytest.fail(f"HEARTH_REQUIRE_DB is set, and {reason}", pytrace=False)
+    pytest.skip(reason)
+
+
 @pytest.fixture(scope="session")
 def _test_database() -> Iterator[tuple[URL, URL]]:
     try:
         admin_url, rw_url, ro_url = _urls()
     except Exception as error:  # missing or incomplete .env
-        pytest.skip(f"database configuration unavailable: {error}")
+        _unavailable(f"database configuration unavailable: {error}")
 
     admin = sa.create_engine(admin_url, isolation_level="AUTOCOMMIT")
     try:
@@ -68,7 +79,7 @@ def _test_database() -> Iterator[tuple[URL, URL]]:
             connection.exec_driver_sql(f'DROP DATABASE IF EXISTS "{TEST_DATABASE}" WITH (FORCE)')
             connection.exec_driver_sql(f'CREATE DATABASE "{TEST_DATABASE}"')
     except sa.exc.OperationalError as error:
-        pytest.skip(f"Postgres unreachable — is `make up` running? ({error.__class__.__name__})")
+        _unavailable(f"Postgres unreachable — is `make up` running? ({error.__class__.__name__})")
 
     # pgvector is created by the initdb script on the real database; the test
     # database is made here, so it needs the extension too.

@@ -1,0 +1,61 @@
+# A pull request that changes what the model is sent must bring a recorded eval
+# run with it.
+#
+# The pre-commit hook reminds; this blocks. It reads the same list of paths
+# (.githooks/watched-paths), so the two cannot disagree about what needs
+# measuring. It cannot run the evals itself — there is no model here — so it
+# checks that a run was recorded, not that it was good: a clean, complete
+# evals/results/<sha>.json added by the pull request. `-dirty` and
+# `-incomplete` results do not count; neither measured a commit in full.
+#
+# A change that sends the model the same bytes — a refactor, a comment —
+# carries the `no-eval-needed` label instead. Check it first with
+# `python -m evals.fingerprint`: equal hashes, same request.
+
+name: eval-recorded
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  eval-recorded:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: A watched path changed, so a result must be added
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-eval-needed') }}
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          watched=$(tr -d '\r' < .githooks/watched-paths | paste -sd '|' -)
+          touched=$(git diff --name-only "$BASE"...HEAD | grep -E "$watched" || true)
+          if [ -z "$touched" ]; then
+            echo "No file the model reads changed."
+            exit 0
+          fi
+          recorded=$(git diff --name-only --diff-filter=A "$BASE"...HEAD \
+            | grep -E '^evals/results/[^/]+\.json$' \
+            | grep -v -e '-dirty' -e '-incomplete' || true)
+          if [ -z "$recorded" ]; then
+            echo "::error::These change what the model is sent, and no complete eval result was added:"
+            printf '  %s\n' $touched
+            echo "Run make eval on the host and commit evals/results/<sha>.json,"
+            echo "or label the pull request no-eval-needed if python -m evals.fingerprint"
+            echo "shows the same hashes as main."
+            exit 1
+          fi
+          echo "Recorded: $recorded"
+
+      - name: Labelled no-eval-needed
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'no-eval-needed') }}
+        run: echo "Skipped by label. The request bytes should match main's — python -m evals.fingerprint."

@@ -538,10 +538,20 @@ measured, so two runs can be seen to have sent the model the same prompts — or
 not, even when no prompt file changed. `requirements.lock` holds the exact
 versions from the GPU host and `make install` applies it as constraints.
 
-`make hooks` installs a pre-commit reminder that notices when you stage a change to
-`prompts/`, `agents/`, `steward/`, `tools/bindings.py` or `llm.py` — the files whose effect
-is only visible as a pass rate — and tells you to re-measure. It blocks nothing and runs nothing: a hook that costs ten minutes is a
-hook that gets bypassed.
+`make hooks` installs a pre-commit reminder that notices when you stage a change to a
+path listed in `.githooks/watched-paths` — `prompts/`, `agents/`, `steward/`, `tools/`,
+`llm.py` and `history/titles.py`, the files whose effect is only visible as a pass rate —
+and tells you to re-measure. It blocks nothing and runs nothing: a hook that costs ten
+minutes is a hook that gets bypassed.
+
+**CI is the gate.** `.github/workflows/check.yml` runs `make lint` and `make test` against
+a throwaway Postgres on every pull request to `main`, with `HEARTH_REQUIRE_DB=1` so a
+missing database fails the run instead of skipping every database test.
+`.github/workflows/eval-recorded.yml` fails a pull request that changes a watched path without adding a
+clean, complete `evals/results/<sha>.json`; a change that sends the model the same bytes
+can carry the `no-eval-needed` label instead. CI sees the repository and the invented
+fixture, never `.env` or real data. It only blocks a merge once `main`'s branch
+protection requires both checks.
 
 The commands whose phase has not landed fail with a message saying so rather than a
 stack trace.

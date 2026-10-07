@@ -113,7 +113,16 @@ before 2026-09-28 have neither.
 ## The hook
 
 `make hooks` points git at `.githooks`. The pre-commit hook notices when you
-stage a change to `prompts/`, `agents/`, `steward/`, `tools/bindings.py` or
-`llm.py` and reminds you to re-measure. It does
-not run the evals and blocks nothing: a pre-commit hook that costs ten minutes
-is a hook that gets bypassed within a week.
+stage a change to a path in `.githooks/watched-paths` — `prompts/`, `agents/`,
+`steward/`, `tools/`, `llm.py` and `history/titles.py` — and reminds you to
+re-measure. It does not run the evals and blocks nothing: a pre-commit hook that
+costs ten minutes is a hook that gets bypassed within a week.
+
+What blocks is CI. `.github/workflows/check.yml` runs `make lint` and `make test`
+on every pull request, and `.github/workflows/eval-recorded.yml` fails a pull
+request that changes a watched path without adding a complete, clean
+`results/<sha>.json`.
+It cannot run the evals itself — there is no model on GitHub's machines — so it
+checks that a run was recorded, not that it was good. A change that sends the
+model the same bytes (`python -m evals.fingerprint` shows it) can carry the
+`no-eval-needed` label instead.

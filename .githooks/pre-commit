@@ -1,16 +1,19 @@
 #!/bin/sh
 # Reminds you to re-measure when you change something the evals measure.
 #
-# Scoped to prompts/, agents/, steward/, tools/bindings.py and llm.py because
-# those are the files whose effect is only visible as a pass rate. The bindings
-# are there because what a tool returns is prompt text too: the model reads it,
-# and a change to how a figure is written changes what the model copies.
+# Scoped to the paths in .githooks/watched-paths — the files whose effect is
+# only visible as a pass rate. CI's eval-recorded check reads the same file, so
+# the two cannot disagree about what needs measuring. tools/ is there because
+# what a tool returns is prompt text too: the model reads it, and a change to
+# how a figure is written — or to the caveat sentences in tools/finance.py,
+# which the model repeats word for word — changes what the model copies.
 # steward/router.py is the router's prompt as much as prompts/steward.md is —
 # its destination descriptions and the pinned schema docstring are sent with
 # every routing call, and Phase 6 reached 100% by editing exactly those. llm.py
-# sets reasoning and temperature for every call. The rest of tools/ and db/ is
-# caught by `make test` in seconds; a change to a prompt is caught by nothing at
-# all until someone notices an answer got worse.
+# sets reasoning and temperature for every call, and history/titles.py the
+# title call's. db/ and the rest are caught by `make test` in seconds; a change
+# to a prompt is caught by nothing at all until someone notices an answer got
+# worse.
 #
 # It does not run the evals. `make eval` takes ten minutes against a local
 # model, and a pre-commit hook that costs ten minutes is a hook that gets
@@ -19,7 +22,10 @@
 #
 # Install with `make hooks`.
 
-staged=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(prompts/|agents/|steward/|tools/bindings\.py$|llm\.py$)' || true)
+# One pattern per line, joined into one expression. Carriage returns are taken
+# out first: a Windows checkout writes the file with CRLF.
+watched=$(tr -d '\r' < .githooks/watched-paths | paste -sd '|' -)
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep -E "$watched" || true)
 [ -z "$staged" ] && exit 0
 
 sha=$(git rev-parse --short HEAD 2>/dev/null || echo "")
