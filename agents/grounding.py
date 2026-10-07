@@ -67,10 +67,13 @@ def _values(pattern: re.Pattern[str], texts: Iterable[str], group: int) -> set[D
     }
 
 
-def ungrounded(answer: str, results: Iterable[str], questions: Iterable[str] = ()) -> list[str]:
+def ungrounded(
+    answer: str, results: Iterable[str], questions: Iterable[str] = (), *, strict: bool = False
+) -> list[str]:
     """The figures in `answer` that no tool result states as a figure of the
     same kind, and no question contains as a number — in the order they appear,
-    each once."""
+    each once. `strict` adds the figures written without their sign
+    (`unitless`)."""
     results, questions = list(results), list(questions)
     typed = _values(_NUMBER, questions, 0)
     flagged: list[str] = []
@@ -80,4 +83,63 @@ def ungrounded(answer: str, results: Iterable[str], questions: Iterable[str] = (
             figure = match.group(0).strip()
             if _value(match.group(1)) not in known and figure not in flagged:
                 flagged.append(figure)
+    if strict:
+        flagged += [f for f in unitless(answer, results, questions) if f not in flagged]
     return flagged
+
+
+# --- figures written without the sign of their kind --------------------------------
+#
+# The sign is what told the check a number was a figure: `$`, a weight unit, `%`.
+# An answer that wrote "38,250 dollars" or "about 38 thousand" walked past it,
+# and a rounded figure is exactly what rule 1 exists to catch. These are found
+# by `unitless`, and flagged only with `strict=True`: added 2026-10-07 without a
+# measured run behind them, they are reported by the evals first, and enforced
+# once a run shows what they catch (docs/reviews/genai-review-2026-10-07-plan.md,
+# PR 7).
+
+#: "38,250 dollars", "38250 USD": money, by the word.
+_DOLLAR_WORDS = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s?(?:dollars?|usd)\b", re.IGNORECASE)
+#: "38 thousand", "38.2k", "$1.2 million": money, scaled. Not "m" for million:
+#: in a training answer it is metres or minutes.
+_SCALED = re.compile(r"(?<![\w.])\$?(\d+(?:\.\d+)?)\s?(k|thousand|million)\b", re.IGNORECASE)
+_SCALE = {"k": Decimal(1000), "thousand": Decimal(1000), "million": Decimal(1_000_000)}
+#: "38,250" with no sign at all: any number with a thousands separator. Years
+#: and day counts have none, and dates are taken out first.
+_BARE = re.compile(
+    r"(?<![\$\d.,\w-])(\d{1,3}(?:,\d{3})+(?:\.\d+)?)"
+    r"(?![\d%]|\s?(?:kg|kgs|kilos?|kilograms?|lbs?|pounds?|dollars?|usd|k|thousand|million)\b)",
+    re.IGNORECASE,
+)
+
+
+def unitless(answer: str, results: Iterable[str], questions: Iterable[str] = ()) -> list[str]:
+    """Figures in `answer` written without `$`, a weight unit or `%` that no
+    tool returned and no question carried — in the order found, each once.
+
+    A worded or scaled amount is money, and is grounded by a dollar figure in a
+    result. A bare number is grounded by any number in a result: a quantity the
+    tools write without commas ("quantity 1200") is still the quantity.
+    """
+    results, questions = list(results), list(questions)
+    typed = _values(_NUMBER, questions, 0)
+    money = _values(_MONEY, results, 1) | typed
+    anything = _values(_NUMBER, results, 0) | typed
+    text = _DATE.sub(" ", answer)
+    found: list[str] = []
+
+    def note(figure: str) -> None:
+        if figure not in found:
+            found.append(figure)
+
+    for match in _DOLLAR_WORDS.finditer(text):
+        if _value(match.group(1)) not in money:
+            note(match.group(0).strip())
+    for match in _SCALED.finditer(text):
+        base = _value(match.group(1))
+        if base is not None and base * _SCALE[match.group(2).lower()] not in money:
+            note(match.group(0).strip())
+    for match in _BARE.finditer(text):
+        if _value(match.group(1)) not in anything:
+            note(match.group(0).strip())
+    return found

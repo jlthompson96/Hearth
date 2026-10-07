@@ -39,6 +39,13 @@ A grounded or caveat case also fails on any figure the answer states that no too
 returned (`agents/grounding.py`, the same check the chat runs on every real answer): the
 right figure being present is not enough if a computed one sits beside it.
 
+That check knows a figure by its sign — `$`, a weight unit, `%`. Figures written
+without one ("38,250 dollars", "about 38 thousand", a bare "38,250") are found by
+`grounding.unitless` and, since 2026-10-07, **reported, not failed**: each case's
+`notes` in the result file lists what it would have flagged. Once a full run's notes
+show no false positives, `strict=True` turns them into failures, in the evals and in
+the chat alike — and that change is measured like any other.
+
 `must_not_contain` exists for the failure that is worse than a wrong number —
 `caveat-no-data-is-not-no-change` asserts the answer does *not* say "unchanged"
 about a period with no data. That bug shipped once.
