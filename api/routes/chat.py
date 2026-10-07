@@ -40,7 +40,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
-from agents import forge, tally
+from agents import forge, provenance, tally
 from agents.conversation import MAX_EXCHANGES, Exchange, window
 from agents.grounding import ungrounded
 from agents.loop import (
@@ -264,6 +264,7 @@ def _turn(
     )
     if flags:
         yield _sse("ungrounded", {"figures": flags})
+    model, prompt_hash = _provenance(agent, request.detail, log, refused=refusal is not None)
     try:
         with writer_connection() as conn:
             if content:
@@ -278,6 +279,8 @@ def _turn(
                     confidence=confidence,
                     ungrounded=flags or None,
                     detail=request.detail,
+                    model=model,
+                    prompt_hash=prompt_hash,
                 )
             untitled = store.needs_title(conn, thread_id)
         if untitled:
@@ -292,6 +295,25 @@ def _turn(
             yield _sse("title", {"id": str(thread_id), "title": title})
     except Exception as error:  # noqa: BLE001 - the answer was delivered; say what was not kept
         yield _sse("error", {"detail": f"the answer was not saved: {type(error).__name__}"})
+
+
+def _provenance(
+    agent: str | None, detail: Detail, log: Sequence[LogEntry], *, refused: bool
+) -> tuple[str | None, str | None]:
+    """What produced a specialist's answer: the model its first step named, and
+    a hash of what the specialist was told (agents/provenance.py). Nothing for
+    a decline, a refusal or a search, which no specialist prompt produced, nor
+    for a turn that stopped before any model step ran."""
+    if refused or agent not in provenance.SPECIALISTS:
+        return None, None
+    model = next((e.model for e in log if e.kind == "step" and e.model), None)
+    if model is None:
+        return None, None
+    try:
+        return model, provenance.answer_hash(agent, detail)
+    except Exception as error:  # noqa: BLE001 - a missing hash must not cost the answer
+        logger.warning("prompt hash not taken: %s", type(error).__name__)
+        return model, None
 
 
 def _keep(thread_id: uuid.UUID, question_id: uuid.UUID, log: list[LogEntry]) -> None:

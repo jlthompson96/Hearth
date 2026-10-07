@@ -26,30 +26,19 @@ without spending ten minutes on one.
 """
 
 import datetime as dt
-import hashlib
 import json
 from importlib.metadata import version
-from typing import Any
 
-from agents import forge, loop, tally
+from agents import loop
 from agents.loop import DETAILS
+from agents.provenance import PLACEHOLDER as PLACEHOLDER
+from agents.provenance import SPECIALISTS, answer_hashes, specialist_request
 from history import titles
-from modellog import request_body
+from modellog import digest, request_body
 from steward.router import routing_request
-from tools.bindings import FORGE_TOOLS, TALLY_TOOLS
-
-#: Stands in for the question, which differs by case. What is hashed is
-#: everything around it.
-PLACEHOLDER = "<question>"
 
 #: The packages between this code and the bytes LM Studio receives.
 PACKAGES = ("langchain-core", "langchain-openai", "langgraph", "openai", "pydantic")
-
-
-def _digest(body: dict[str, Any]) -> str:
-    body = {k: v for k, v in body.items() if k != "model"}
-    encoded = json.dumps(body, sort_keys=True, default=str).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()[:12]
 
 
 def prompt_hashes(today: dt.date) -> dict[str, str]:
@@ -65,24 +54,20 @@ def prompt_hashes(today: dt.date) -> dict[str, str]:
     hashes: dict[str, str] = {}
     for with_errand in (False, True):
         model, asked = routing_request(PLACEHOLDER, None, with_errand=with_errand)
-        hashes["steward+errand" if with_errand else "steward"] = _digest(request_body(model, asked))
-    specialists = (
-        ("tally", tally.system_prompt, TALLY_TOOLS),
-        ("forge", forge.system_prompt, FORGE_TOOLS),
-    )
-    for name, system_prompt, tools in specialists:
+        hashes["steward+errand" if with_errand else "steward"] = digest(request_body(model, asked))
+    for name in SPECIALISTS:
         for detail in DETAILS:
-            conversation = loop.opening(system_prompt(today, detail), PLACEHOLDER)
-            hashes[f"{name}/{detail}"] = _digest(
-                request_body(loop.bound(tools), conversation, stream=True)
-            )
-            hashes[f"{name}/{detail}/final"] = _digest(
+            # The request a turn sends, built by the code that sends it — and the
+            # one a stored answer's prompt hash is taken from (agents.provenance).
+            first, conversation = specialist_request(name, detail, today)
+            hashes[f"{name}/{detail}"] = digest(request_body(first, conversation, stream=True))
+            hashes[f"{name}/{detail}/final"] = digest(
                 request_body(loop.answer_only(), conversation, stream=True)
             )
     # The fence strips the placeholder's brackets; what is hashed is everything
     # around the question, which is the point.
     title_model, title_asked = titles.title_request(PLACEHOLDER)
-    hashes["title"] = _digest(request_body(title_model, title_asked))
+    hashes["title"] = digest(request_body(title_model, title_asked))
     return hashes
 
 
@@ -94,4 +79,13 @@ if __name__ == "__main__":
     from evals import runner
 
     today = runner.load()[1]
-    print(json.dumps({"packages": package_versions(), "prompts": prompt_hashes(today)}, indent=2))
+    print(
+        json.dumps(
+            {
+                "packages": package_versions(),
+                "prompts": prompt_hashes(today),
+                "answer_hashes": answer_hashes(),
+            },
+            indent=2,
+        )
+    )

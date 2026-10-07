@@ -576,3 +576,97 @@ def test_a_grounded_answer_raises_no_flag(
 
     assert "event: ungrounded" not in response.text
     assert memory.messages[1]["ungrounded"] is None
+
+
+# --- what produced an answer (2026-10-07) ---------------------------------------
+
+
+def _step(model: str) -> Event:
+    """A specialist's model call, as the loop reports it to the Model log."""
+    from agents.loop import LogEvent
+    from modellog import LogEntry
+
+    return LogEvent(
+        LogEntry(
+            kind="step",
+            caller="tally",
+            request={},
+            response=None,
+            started_at=dt.datetime(2026, 10, 7, tzinfo=dt.UTC),
+            duration_ms=1,
+            model=model,
+        )
+    )
+
+
+@pytest.fixture
+def hashed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A recognisable prompt hash, so what is stored can be told apart."""
+    from agents import provenance
+
+    monkeypatch.setattr(provenance, "answer_hash", lambda name, detail: f"hash:{name}/{detail}")
+
+
+def test_a_specialist_s_answer_names_its_model_and_prompt(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore, hashed: None
+) -> None:
+    """The Model log keeps this for 90 days and the model can change on the
+    Settings screen; the answer is kept for a year, and says what made it."""
+    from agents.loop import RoutedEvent
+
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(
+            RoutedEvent(destination="tally", confidence=0.9, router="constrained-json"),
+            _step("a-model"),
+            TokenEvent("Your accounts are all recorded."),
+            DoneEvent(),
+        ),
+    )
+
+    client.post("/api/chat", json={"message": "what do I have?", "detail": "brief"})
+
+    answer = memory.messages[-1]
+    assert (answer["model"], answer["prompt_hash"]) == ("a-model", "hash:tally/brief")
+
+
+def test_a_decline_or_a_refusal_names_no_model(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore, hashed: None
+) -> None:
+    from agents.loop import RefusedEvent, RoutedEvent
+
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(
+            RoutedEvent(destination="unsupported", confidence=0.9, router="constrained-json"),
+            TokenEvent("That is outside what I can answer."),
+            DoneEvent("unsupported"),
+        ),
+    )
+    client.post("/api/chat", json={"message": "what is the weather?"})
+    monkeypatch.setattr(
+        chat_route, "_events", _script(RefusedEvent("purging", "I can't help with that."))
+    )
+    client.post("/api/chat", json={"message": "a question the check refuses", "agent": "forge"})
+
+    declined, refused = memory.messages[1], memory.messages[3]
+    assert (declined["model"], declined["prompt_hash"]) == (None, None)
+    assert (refused["model"], refused["prompt_hash"]) == (None, None)
+
+
+def test_a_turn_no_model_ran_for_names_none(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, memory: _MemoryStore, hashed: None
+) -> None:
+    """A specialist that stopped before its first step — the chat model not
+    loaded at the right window — produced nothing a prompt hash describes."""
+    monkeypatch.setattr(
+        chat_route,
+        "_events",
+        _script(TokenEvent("The chat model is loaded with a 4,096-token window."), DoneEvent()),
+    )
+
+    client.post("/api/chat", json={"message": "how is my net worth?", "agent": "tally"})
+
+    assert (memory.messages[-1]["model"], memory.messages[-1]["prompt_hash"]) == (None, None)

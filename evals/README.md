@@ -103,6 +103,12 @@ is offered no tools (`tally/normal/final`), and the title call (`title`) — bui
 by langchain-openai's own payload builder with the question left out, and
 `packages` the versions that build it. The `/final` and `title` hashes were
 added on 2026-10-07; the others are built as before and compare with older runs.
+
+`answer_hashes` are the same specialist hashes taken on one fixed day
+(`agents/provenance.py`), because the prompt states today's date and a hash
+taken on the day moves every morning. Every stored answer carries one of them
+in `message.prompt_hash`, beside the model that answered, so an answer from
+months ago can be matched to the runs that measured the prompt behind it.
 Equal hashes mean two runs sent the same prompts, schemas and settings. Unequal
 hashes mean something the model reads changed, whether or not a file under
 `prompts/` did: a docstring pydantic puts in a schema, a constant in

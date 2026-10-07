@@ -61,6 +61,11 @@ class StoredMessage(BaseModel):
     ungrounded: list[str] | None
     #: brief, normal or detailed; None for answers from before the control.
     detail: str | None
+    #: The model that answered, and a hash of what the specialist was told
+    #: (agents/provenance.py). None for questions, declines, refusals, searches
+    #: and answers from before 2026-10-07.
+    model: str | None = None
+    prompt_hash: str | None = None
     created_at: dt.datetime
 
 
@@ -124,6 +129,8 @@ def get_thread(thread_id: uuid.UUID) -> ThreadDetail:
                 confidence=m.confidence,
                 ungrounded=m.ungrounded,
                 detail=m.detail,
+                model=m.model,
+                prompt_hash=m.prompt_hash,
                 created_at=m.created_at,
             )
             for m in detail.messages
