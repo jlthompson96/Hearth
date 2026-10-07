@@ -105,3 +105,29 @@ def test_a_body_weight_can_be_removed(client: TestClient) -> None:
 
     assert client.delete(f"/api/body-weights/{entry.json()['id']}").status_code == 204
     assert client.get("/api/training").json()["body_weights"] == []
+
+
+def test_the_same_entry_posted_twice_is_one_workout(client: TestClient) -> None:
+    """What a double click on "record" sends."""
+    import uuid
+
+    entry = {**SESSION, "id": str(uuid.uuid4())}
+
+    first = client.post("/api/workouts", json=entry)
+    again = client.post("/api/workouts", json=entry)
+
+    assert (first.status_code, again.status_code) == (201, 200)
+    assert first.json() == again.json()
+    assert len(client.get("/api/training").json()["workouts"]) == 1
+
+
+def test_an_entry_id_reused_for_a_different_session_is_a_409(client: TestClient) -> None:
+    import uuid
+
+    entry = {**SESSION, "id": str(uuid.uuid4())}
+    client.post("/api/workouts", json=entry)
+
+    changed = client.post("/api/workouts", json={**entry, "performed_on": "2026-09-22"})
+
+    assert changed.status_code == 409
+    assert changed.json()["kind"] == "conflict"

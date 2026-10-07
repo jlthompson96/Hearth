@@ -280,3 +280,82 @@ def test_nothing_is_entered_beside_the_fixture(seeded: sa.Connection) -> None:
         record_workout(seeded, performed_on=DAY, sets=_squat("225"))
     with pytest.raises(FixtureLoaded):
         record_body_weight(seeded, as_of=DAY, weight=Decimal("181.4"))
+
+
+# --- the same entry twice (2026-10-07) ----------------------------------------
+#
+# A double click, or a request retried after a dropped connection, used to store
+# a session twice, and a lift's progression then showed the day twice. The form
+# now names each entry with an id of its own; the same id again is the same
+# entry, and is stored once.
+
+
+def test_the_same_entry_sent_twice_is_stored_once(conn: sa.Connection) -> None:
+    import uuid
+
+    entry = uuid.uuid4()
+    first = record_workout(conn, performed_on=DAY, sets=_squat("225", "235.5"), workout_id=entry)
+    again = record_workout(conn, performed_on=DAY, sets=_squat("225", "235.5"), workout_id=entry)
+
+    assert first == again and first.id == entry
+    assert conn.execute(sa.select(sa.func.count()).select_from(Workout)).scalar_one() == 1
+    assert conn.execute(sa.select(sa.func.count()).select_from(WorkoutSet)).scalar_one() == 2
+
+
+def test_an_entry_id_reused_for_a_different_session_is_refused(conn: sa.Connection) -> None:
+    """Not quietly overwritten, and not quietly ignored: one of the two is not
+    what was meant, and only the person knows which."""
+    import uuid
+
+    entry = uuid.uuid4()
+    record_workout(conn, performed_on=DAY, sets=_squat("225"), workout_id=entry)
+
+    with pytest.raises(Conflict, match="already recorded"):
+        record_workout(conn, performed_on=DAY, sets=_squat("230"), workout_id=entry)
+
+
+def test_a_weight_written_another_way_is_the_same_entry(conn: sa.Connection) -> None:
+    """225 and 225.000 are one weight; the retry of a form is not a new session."""
+    import uuid
+
+    entry = uuid.uuid4()
+    record_workout(conn, performed_on=DAY, sets=_squat("225"), workout_id=entry)
+
+    record_workout(conn, performed_on=DAY, sets=_squat("225.000"), workout_id=entry)
+
+    assert conn.execute(sa.select(sa.func.count()).select_from(Workout)).scalar_one() == 1
+
+
+def test_without_an_id_two_sessions_on_one_day_are_two(conn: sa.Connection) -> None:
+    """A morning and an evening session are both real."""
+    record_workout(conn, performed_on=DAY, sets=_squat("225"))
+    record_workout(conn, performed_on=DAY, sets=_squat("225"))
+
+    assert conn.execute(sa.select(sa.func.count()).select_from(Workout)).scalar_one() == 2
+
+
+def test_a_twin_that_got_there_first_is_what_comes_back(
+    conn: sa.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two clicks in flight at once: both look, neither finds the entry, and the
+    second insert fails on the id the first just used. The second still answers
+    with the session the first stored, instead of an error."""
+    import uuid
+
+    from ingest import training
+
+    entry = uuid.uuid4()
+    first = record_workout(conn, performed_on=DAY, sets=_squat("225"), workout_id=entry)
+    real = training._one
+    looked: list[uuid.UUID] = []
+
+    def not_yet_visible(c: sa.Connection, workout_id: uuid.UUID) -> object:
+        looked.append(workout_id)
+        return None if len(looked) == 1 else real(c, workout_id)
+
+    monkeypatch.setattr(training, "_one", not_yet_visible)
+
+    again = record_workout(conn, performed_on=DAY, sets=_squat("225"), workout_id=entry)
+
+    assert again == first
+    assert conn.execute(sa.select(sa.func.count()).select_from(Workout)).scalar_one() == 1

@@ -204,7 +204,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record a workout by hand */
+        /** Record a workout by hand; 200 when the same entry was already recorded */
         post: operations["record_workout_api_workouts_post"];
         delete?: never;
         options?: never;
@@ -712,6 +712,8 @@ export interface components {
         };
         /** NewWorkout */
         NewWorkout: {
+            /** Id */
+            id?: string | null;
             /**
              * Performed On
              * Format: date

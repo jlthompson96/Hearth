@@ -180,6 +180,12 @@ function WorkoutForm({
   const [notes, setNotes] = useState('')
   const [sets, setSets] = useState<SetRow[]>([{ ...EMPTY_SET }])
   const [refusal, setRefusal] = useState<string | null>(null)
+  // The entry's own id. Sent again unchanged — a double click, a retry after a
+  // dropped connection — it is the same entry, and the server stores it once.
+  // A change to anything in the form makes it a different entry, with a new id.
+  const [entryId, setEntryId] = useState(() => crypto.randomUUID())
+  const [submitting, setSubmitting] = useState(false)
+  useEffect(() => setEntryId(crypto.randomUUID()), [performedOn, kind, duration, notes, sets])
 
   const filled = sets.filter((s) => s.exercise.trim() || s.reps.trim() || s.weight.trim())
   const complete = filled.every((s) => s.exercise.trim() && /^\d+$/.test(s.reps.trim()))
@@ -191,8 +197,11 @@ function WorkoutForm({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
+    if (submitting) return
+    setSubmitting(true)
     try {
       await data.recordWorkout({
+        id: entryId,
         performed_on: performedOn,
         kind,
         duration_minutes: duration.trim() || null,
@@ -210,6 +219,8 @@ function WorkoutForm({
       showToast(`Session on ${performedOn} recorded`)
     } catch (error) {
       setRefusal(reason(error))
+    } finally {
+      setSubmitting(false)
     }
     await onDone()
   }
@@ -320,7 +331,7 @@ function WorkoutForm({
         <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} />
       </label>
       {refusal && <p className="error">{refusal}</p>}
-      <button type="submit" disabled={!ready}>
+      <button type="submit" disabled={!ready || submitting}>
         Record workout
       </button>
     </form>
