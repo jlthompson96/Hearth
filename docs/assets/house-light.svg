@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 300" width="1000" height="300" role="img" aria-label="What leaves the house: everything runs on one machine; only Errand's validated, audited search queries reach SearXNG">
+  <style>
+    .flow { animation: flow 1.2s linear infinite; }
+    @keyframes flow { to { stroke-dashoffset: -20 } }
+    .door { animation: door 2.6s ease-in-out infinite; }
+    @keyframes door { 0%,100% { stroke-opacity: .5 } 50% { stroke-opacity: 1 } }
+    @media (prefers-reduced-motion: reduce) { .flow, .door { animation: none } }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#596275"/></marker>
+    <radialGradient id="in" cx="0.3" cy="0.7" r="0.8"><stop offset="0" stop-color="#c2410c" stop-opacity="0.12"/><stop offset="1" stop-color="#c2410c" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1000" height="300" rx="14" fill="#f6f7f9"/>
+
+  <!-- the house wall -->
+  <path d="M24 108 L370 30 L716 108 L716 276 L24 276 Z" fill="url(#in)" stroke="#c2410c" stroke-opacity="0.5" stroke-width="2" stroke-linejoin="round"/>
+  <text x="44" y="128" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="2" fill="#c2410c">THIS MACHINE · LOCALHOST + LAN</text>
+
+  <rect x="44" y="146" width="140" height="56" rx="8" fill="#eceff4" stroke="#12151c" stroke-opacity="0.6"/><text x="114.0" y="170" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#12151c">Browser</text><text x="114.0" y="189" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="11" fill="#596275">React + Vite</text>
+  <rect x="224" y="146" width="140" height="56" rx="8" fill="#eceff4" stroke="#12151c" stroke-opacity="0.6"/><text x="294.0" y="170" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#12151c">FastAPI</text><text x="294.0" y="189" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="11" fill="#596275">SSE chat</text>
+  <rect x="404" y="146" width="140" height="56" rx="8" fill="#eceff4" stroke="#c2410c" stroke-opacity="0.6"/><text x="474.0" y="170" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#c2410c">Steward</text><text x="474.0" y="189" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="11" fill="#596275">router · hop cap</text>
+  <rect x="224" y="212" width="140" height="56" rx="8" fill="#eceff4" stroke="#1d7a3f" stroke-opacity="0.6"/><text x="294.0" y="236" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1d7a3f">Postgres 17</text><text x="294.0" y="255" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="11" fill="#596275">read-only role</text>
+  <rect x="404" y="212" width="140" height="56" rx="8" fill="#eceff4" stroke="#4150c8" stroke-opacity="0.6"/><text x="474.0" y="236" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#4150c8">LM Studio</text><text x="474.0" y="255" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="11" fill="#596275">:1234 · 4B model</text>
+  <rect x="570" y="146" width="130" height="56" rx="8" fill="#eceff4" stroke="#875600" stroke-opacity="0.6"/><text x="635.0" y="170" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#875600">Errand</text><text x="635.0" y="189" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="11" fill="#596275">validate · audit</text>
+
+  <line x1="184" y1="174" x2="222" y2="174" stroke="#596275" stroke-width="1.8" marker-end="url(#ah)"/>
+  <line x1="364" y1="174" x2="402" y2="174" stroke="#596275" stroke-width="1.8" marker-end="url(#ah)"/>
+  <line x1="544" y1="174" x2="568" y2="174" stroke="#596275" stroke-width="1.8" marker-end="url(#ah)"/>
+  <line x1="294" y1="202" x2="294" y2="210" stroke="#596275" stroke-width="1.8" marker-end="url(#ah)"/>
+  <line x1="474" y1="202" x2="474" y2="210" stroke="#596275" stroke-width="1.8" marker-end="url(#ah)"/>
+
+  <!-- the one door -->
+  <rect x="709" y="156" width="14" height="36" rx="2" fill="#f6f7f9" stroke="#875600" stroke-width="2" class="door"/>
+  <line x1="700" y1="174" x2="800" y2="174" stroke="#875600" stroke-width="2" stroke-dasharray="6 4" class="flow" marker-end="url(#ah)"/>
+  <rect x="806" y="146" width="170" height="56" rx="8" fill="#eceff4" stroke="#875600" stroke-opacity="0.6"/><text x="891.0" y="170" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#875600">SearXNG</text><text x="891.0" y="189" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="11" fill="#596275">self-hosted → web</text>
+  <text x="755" y="226" text-anchor="middle" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="11" fill="#875600">search_audit</text>
+  <text x="755" y="242" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" fill="#596275">every query logged</text>
+
+  <text x="810" y="230" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="2" fill="#596275">NEVER</text>
+  <text x="810" y="250" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#ad3328" fill-opacity="0.9">✕ telemetry, analytics</text><text x="810" y="268" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#ad3328" fill-opacity="0.9">✕ Plaid, OAuth, brokerage APIs</text><text x="810" y="286" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#ad3328" fill-opacity="0.9">✕ a remote https:// MCP</text>
+</svg>

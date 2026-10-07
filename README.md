@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="Hearth — a local-first personal assistant. Everything runs on my machine." width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/banner-light.svg">
+    <img src="docs/assets/banner.svg" alt="Hearth — a local-first personal assistant. Everything runs on my machine." width="100%">
+  </picture>
 </p>
 
 <p align="center">
@@ -31,7 +34,10 @@ the first real one matched Fidelity's totals to the cent.
 ## The cast
 
 <p align="center">
-  <img src="docs/assets/cast.svg" alt="The cast: Steward routes each turn, Tally answers finance, Forge answers training, Errand searches the web" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/cast-light.svg">
+    <img src="docs/assets/cast.svg" alt="The cast: Steward routes each turn, Tally answers finance, Forge answers training, Errand searches the web" width="100%">
+  </picture>
 </p>
 
 | Name | Role | Module |
@@ -48,7 +54,10 @@ is measured: 60/60 on a 20-case labelled set, every case unanimous across three 
 ## Architecture
 
 <p align="center">
-  <img src="docs/assets/house.svg" alt="What leaves the house: everything runs on this machine; only Errand's validated, audited search queries reach SearXNG" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/house-light.svg">
+    <img src="docs/assets/house.svg" alt="What leaves the house: everything runs on this machine; only Errand's validated, audited search queries reach SearXNG" width="100%">
+  </picture>
 </p>
 
 Everything below runs on one machine. The only planned exception is Errand's web search
@@ -205,7 +214,10 @@ Rules 8–11 govern MCP, which arrives in Phase 12; no MCP code exists yet.
 ## Roadmap
 
 <p align="center">
-  <img src="docs/assets/phases.svg" alt="Phases 0 to 8 and 11 done; 9 built and waiting on SearXNG; 10 blocked on pgvector; 12 not started" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/phases-light.svg">
+    <img src="docs/assets/phases.svg" alt="Phases 0 to 8 and 11 done; 9 built and waiting on SearXNG; 10 blocked on pgvector; 12 not started" width="100%">
+  </picture>
 </p>
 
 Effort was sized in evenings; the full reasoning for each phase, including what each

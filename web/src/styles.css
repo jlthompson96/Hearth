@@ -29,6 +29,12 @@
   --warn: light-dark(#875600, #f5c451);
   --warn-soft: light-dark(#fdf1d3, #2a2310);
 
+  /* Who answered. Tally and Forge borrow --up and --accent; the Steward has
+     its own ember, the hearth's colour. Errand is amber on purpose: what it
+     brings back is web text, unverified, which is what amber already means. */
+  --steward: light-dark(#c2410c, #f59e5b);
+  --errand: var(--warn);
+
   --radius: 0.5rem;
   --shadow: light-dark(0 1px 2px rgb(16 24 40 / 0.06), 0 1px 2px rgb(0 0 0 / 0.4));
   --ring: 0 0 0 3px light-dark(rgb(65 80 200 / 0.28), rgb(143 157 255 / 0.32));
@@ -438,6 +444,9 @@ main {
 
 .who.tally { color: var(--up); }
 .who.forge { color: var(--accent); }
+.who.errand { color: var(--errand); }
+/* Declined: no specialist answered, so the label is the Steward's. */
+.who.unsupported { color: var(--steward); }
 
 /* Worth seeing. It is the difference between a decision and a coin flip. */
 .unsure {
@@ -1299,7 +1308,7 @@ mark.unverified {
 }
 
 .entry.step .bar > span { background: var(--accent); }
-.entry.route .bar > span,
+.entry.route .bar > span { background: var(--steward); }
 .entry.title .bar > span { background: var(--up); }
 .entry.failed .bar > span { background: var(--down); }
 
