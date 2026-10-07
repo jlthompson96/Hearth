@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 210" width="1000" height="210" role="img" aria-label="The cast: Steward routes, Tally handles finance, Forge handles training, Errand searches the web">
+  <style>
+    .pulse { animation: pulse 3s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { stroke-opacity: .5 } 50% { stroke-opacity: 1 } }
+    @media (prefers-reduced-motion: reduce) { .pulse { animation: none } }
+  </style>
+  <defs><radialGradient id="w0" cx="0.9" cy="0.1" r="0.8"><stop offset="0" stop-color="#f59e5b" stop-opacity="0.16"/><stop offset="1" stop-color="#f59e5b" stop-opacity="0"/></radialGradient><radialGradient id="w1" cx="0.9" cy="0.1" r="0.8"><stop offset="0" stop-color="#62d391" stop-opacity="0.16"/><stop offset="1" stop-color="#62d391" stop-opacity="0"/></radialGradient><radialGradient id="w2" cx="0.9" cy="0.1" r="0.8"><stop offset="0" stop-color="#8f9dff" stop-opacity="0.16"/><stop offset="1" stop-color="#8f9dff" stop-opacity="0"/></radialGradient><radialGradient id="w3" cx="0.9" cy="0.1" r="0.8"><stop offset="0" stop-color="#f5c451" stop-opacity="0.16"/><stop offset="1" stop-color="#f5c451" stop-opacity="0"/></radialGradient></defs>
+  <rect width="1000" height="210" rx="14" fill="#0a0c11"/>
+  <g>
+      <rect x="10.0" y="10" width="232" height="190" rx="10" fill="#11141b" stroke="#f59e5b" stroke-opacity="0.45"/>
+      <rect x="10.0" y="10" width="232" height="190" rx="10" fill="url(#w0)"/>
+      <rect x="28.0" y="28" width="44" height="44" rx="9" fill="#f59e5b" fill-opacity="0.12" stroke="#f59e5b" stroke-opacity="0.5" class="pulse" style="animation-delay:-0.0s"/>
+      <g transform="translate(38.0 38) scale(1)" fill="none" stroke="#f59e5b" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><path d="M12 7v5M12 12l-6 5M12 12l6 5M12 12v7"/><circle cx="6" cy="19" r="1.6"/><circle cx="12" cy="20.5" r="1.6"/><circle cx="18" cy="19" r="1.6"/></g>
+      <text x="86.0" y="48" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="2" fill="#f59e5b">STEWARD</text>
+      <text x="86.0" y="67" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#98a0b4">Orchestrator</text>
+      <text x="28.0" y="106" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#e9ebf1">Routes each turn, or</text>
+      <text x="28.0" y="126" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#e9ebf1">declines it. Hop cap: 6.</text>
+      <line x1="28.0" y1="152" x2="224.0" y2="152" stroke="#232835"/>
+      <text x="28.0" y="178" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="12.5" fill="#98a0b4">steward/</text>
+    </g><g>
+      <rect x="257.5" y="10" width="232" height="190" rx="10" fill="#11141b" stroke="#62d391" stroke-opacity="0.45"/>
+      <rect x="257.5" y="10" width="232" height="190" rx="10" fill="url(#w1)"/>
+      <rect x="275.5" y="28" width="44" height="44" rx="9" fill="#62d391" fill-opacity="0.12" stroke="#62d391" stroke-opacity="0.5" class="pulse" style="animation-delay:-0.7s"/>
+      <g transform="translate(285.5 38) scale(1)" fill="none" stroke="#62d391" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-7"/><path d="M16 7h4v4"/></g>
+      <text x="333.5" y="48" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="2" fill="#62d391">TALLY</text>
+      <text x="333.5" y="67" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#98a0b4">Personal finance</text>
+      <text x="275.5" y="106" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#e9ebf1">Balances, net worth,</text>
+      <text x="275.5" y="126" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#e9ebf1">allocation — to the cent.</text>
+      <line x1="275.5" y1="152" x2="471.5" y2="152" stroke="#232835"/>
+      <text x="275.5" y="178" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="12.5" fill="#98a0b4">agents/tally.py</text>
+    </g><g>
+      <rect x="505.0" y="10" width="232" height="190" rx="10" fill="#11141b" stroke="#8f9dff" stroke-opacity="0.45"/>
+      <rect x="505.0" y="10" width="232" height="190" rx="10" fill="url(#w2)"/>
+      <rect x="523.0" y="28" width="44" height="44" rx="9" fill="#8f9dff" fill-opacity="0.12" stroke="#8f9dff" stroke-opacity="0.5" class="pulse" style="animation-delay:-1.4s"/>
+      <g transform="translate(533.0 38) scale(1)" fill="none" stroke="#8f9dff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11M17.5 6.5v11M3 9.5v5M21 9.5v5M6.5 12h11"/></g>
+      <text x="581.0" y="48" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="2" fill="#8f9dff">FORGE</text>
+      <text x="581.0" y="67" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#98a0b4">Fitness &amp; training</text>
+      <text x="523.0" y="106" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#e9ebf1">Lifts, est. 1RM, body</text>
+      <text x="523.0" y="126" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#e9ebf1">metrics. Not a coach.</text>
+      <line x1="523.0" y1="152" x2="719.0" y2="152" stroke="#232835"/>
+      <text x="523.0" y="178" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="12.5" fill="#98a0b4">agents/forge.py</text>
+    </g><g>
+      <rect x="752.5" y="10" width="232" height="190" rx="10" fill="#11141b" stroke="#f5c451" stroke-opacity="0.45"/>
+      <rect x="752.5" y="10" width="232" height="190" rx="10" fill="url(#w3)"/>
+      <rect x="770.5" y="28" width="44" height="44" rx="9" fill="#f5c451" fill-opacity="0.12" stroke="#f5c451" stroke-opacity="0.5" class="pulse" style="animation-delay:-2.1s"/>
+      <g transform="translate(780.5 38) scale(1)" fill="none" stroke="#f5c451" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></g>
+      <text x="828.5" y="48" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="2" fill="#f5c451">ERRAND</text>
+      <text x="828.5" y="67" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#98a0b4">Web search</text>
+      <text x="770.5" y="106" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#e9ebf1">The only one that</text>
+      <text x="770.5" y="126" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#e9ebf1">leaves the house.</text>
+      <line x1="770.5" y1="152" x2="966.5" y2="152" stroke="#232835"/>
+      <text x="770.5" y="178" font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace" font-size="12.5" fill="#98a0b4">tools/errand.py</text>
+    </g>
+</svg>

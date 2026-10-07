@@ -1,3 +1,18 @@
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="Hearth — a local-first personal assistant. Everything runs on my machine." width="100%">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12-f59e5b?style=for-the-badge&logo=python&logoColor=white&labelColor=0a0c11" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/FastAPI-SSE-f59e5b?style=for-the-badge&logo=fastapi&logoColor=white&labelColor=0a0c11" alt="FastAPI">
+  <img src="https://img.shields.io/badge/LangGraph-1.x-f59e5b?style=for-the-badge&labelColor=0a0c11" alt="LangGraph 1.x">
+  <img src="https://img.shields.io/badge/React_+_TS-Vite-8f9dff?style=for-the-badge&logo=react&logoColor=white&labelColor=0a0c11" alt="React + TypeScript + Vite">
+  <img src="https://img.shields.io/badge/Postgres-17-62d391?style=for-the-badge&logo=postgresql&logoColor=white&labelColor=0a0c11" alt="Postgres 17">
+  <img src="https://img.shields.io/badge/LM_Studio-localhost%3A1234-8f9dff?style=for-the-badge&labelColor=0a0c11" alt="LM Studio on localhost">
+  <img src="https://img.shields.io/badge/VRAM-8_GB-f5c451?style=for-the-badge&logo=nvidia&logoColor=white&labelColor=0a0c11" alt="8 GB VRAM">
+  <img src="https://img.shields.io/badge/telemetry-none-ff8b7b?style=for-the-badge&labelColor=0a0c11" alt="No telemetry">
+</p>
+
 # Hearth
 
 A local-first personal assistant. An orchestrator routes each turn to a specialist agent
@@ -13,10 +28,28 @@ computed, to the cent, and coverage gaps stated before the trend. Conversations 
 and searchable. Fidelity positions exports import from a folder outside the repo, and
 the first real one matched Fidelity's totals to the cent.
 
+## The cast
+
+<p align="center">
+  <img src="docs/assets/cast.svg" alt="The cast: Steward routes each turn, Tally answers finance, Forge answers training, Errand searches the web" width="100%">
+</p>
+
+| Name | Role | Module |
+|---|---|---|
+| **Hearth** | the app | — |
+| **Steward** | orchestrator / router | `steward/` |
+| **Tally** | personal finance | `agents/tally.py`, `prompts/tally.md` |
+| **Forge** | fitness and training | `agents/forge.py`, `prompts/forge.md` |
+| **Errand** | web search — the only agent that leaves the house | `tools/errand.py` |
+
 You do not say which specialist you want. Routing is a constrained-JSON classifier and it
 is measured: 60/60 on a 20-case labelled set, every case unanimous across three runs.
 
 ## Architecture
+
+<p align="center">
+  <img src="docs/assets/house.svg" alt="What leaves the house: everything runs on this machine; only Errand's validated, audited search queries reach SearXNG" width="100%">
+</p>
 
 Everything below runs on one machine. The only planned exception is Errand's web search
 (Phase 9), which will pass an egress filter and be logged.
@@ -170,6 +203,10 @@ text is not in this table, because it is not implemented.
 Rules 8–11 govern MCP, which arrives in Phase 12; no MCP code exists yet.
 
 ## Roadmap
+
+<p align="center">
+  <img src="docs/assets/phases.svg" alt="Phases 0 to 8 and 11 done; 9 built and waiting on SearXNG; 10 blocked on pgvector; 12 not started" width="100%">
+</p>
 
 Effort was sized in evenings; the full reasoning for each phase, including what each
 measurement found, is in [docs/plan.md](docs/plan.md).
