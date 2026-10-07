@@ -49,6 +49,23 @@ def _model() -> _TitleModel:
     return structured_reply(_Title, max_tokens=MAX_TOKENS, reasoning_effort="none")
 
 
+def title_messages(question: str) -> list[BaseMessage]:
+    """What the title call asks. The question is fenced, and cannot close its
+    own fence."""
+    fenced = question.replace("<question>", "").replace("</question>", "")
+    return [
+        SystemMessage(load_prompt("title")),
+        HumanMessage(f"<question>\n{fenced}\n</question>"),
+    ]
+
+
+def title_request(question: str) -> tuple[_TitleModel, list[BaseMessage]]:
+    """The constrained model a title call invokes, and what it is asked.
+    `for_question` sends this and `evals.fingerprint` hashes it, so the two
+    cannot describe different requests."""
+    return _model(), title_messages(question)
+
+
 def for_question(
     question: str,
     *,
@@ -57,13 +74,10 @@ def for_question(
 ) -> str:
     """The title, or the question's first words if the call fails. `log`
     receives the call's Model log entry, failed or not."""
-    # The question is fenced, and cannot close its own fence.
-    fenced = question.replace("<question>", "").replace("</question>", "")
-    messages = [
-        SystemMessage(load_prompt("title")),
-        HumanMessage(f"<question>\n{fenced}\n</question>"),
-    ]
-    chosen = model or _model()
+    if model is None:
+        chosen, messages = title_request(question)
+    else:
+        chosen, messages = model, title_messages(question)
     clock = Clock()
     reply: dict[str, Any] = {}
     error: str | None = None

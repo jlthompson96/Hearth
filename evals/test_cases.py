@@ -53,6 +53,7 @@ def _record(_model_available: tuple[str, str | None]) -> object:
         _RESULTS,
         model=model,
         dirty=runner.working_tree_dirty(),
+        expected=len(CASES),
         reasoning_effort=effort,
         packages=packages,
         prompts=prompts,

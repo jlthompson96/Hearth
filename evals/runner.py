@@ -218,11 +218,18 @@ def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
 
 
 def run(case: Case, today: dt.date, runs: int) -> Result:
+    """Every run ends in a result, a crash included. A case that raised used to
+    leave none: the run's totals counted only the cases that came back, so a
+    change that broke every specialist turn would have recorded the routing
+    and refusal cases alone and read as a clean pass."""
     passed = 0
     detail: list[str] = []
     started = time.perf_counter()
     for _ in range(runs):
-        ok, why = run_once(case, today)
+        try:
+            ok, why = run_once(case, today)
+        except Exception as error:  # noqa: BLE001 - a crash is a failed run, recorded as one
+            ok, why = False, f"raised {type(error).__name__}: {error}"
         passed += ok
         if not ok and why not in detail:
             detail.append(why)
@@ -255,6 +262,7 @@ def record(
     *,
     model: str,
     dirty: bool,
+    expected: int,
     reasoning_effort: str | None = None,
     packages: dict[str, str] | None = None,
     prompts: dict[str, str] | None = None,
@@ -269,9 +277,14 @@ def record(
     with it on. And for what it was sent: `packages` and `prompts` are
     `evals.fingerprint`'s, so two runs can be seen to have measured the same
     requests, or not.
+
+    `expected` is how many cases the file holds. A run that recorded fewer — a
+    `-k` filter, or cases lost some other way — is named `-incomplete`, because
+    it is not a baseline and must not read as one.
     """
     RESULTS.mkdir(exist_ok=True)
     sha = head_sha()
+    incomplete = len(results) < expected
     payload = {
         "sha": sha,
         "dirty": dirty,
@@ -283,6 +296,7 @@ def record(
         "prompts": prompts,
         "totals": {
             "cases": len(results),
+            "cases_expected": expected,
             "passing": sum(1 for r in results if r.ok),
             "runs": sum(r.runs for r in results),
             "runs_passed": sum(r.passed for r in results),
@@ -291,7 +305,9 @@ def record(
         "results": [asdict(r) for r in results],
     }
     effort = f"-reasoning-{reasoning_effort}" if reasoning_effort else ""
-    path = RESULTS / f"{sha}{effort}{'-dirty' if dirty else ''}.json"
+    partial = "-incomplete" if incomplete else ""
+    # `-dirty` stays last, so .gitignore's `*-dirty.json` still matches.
+    path = RESULTS / f"{sha}{effort}{partial}{'-dirty' if dirty else ''}.json"
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return path
 

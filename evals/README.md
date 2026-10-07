@@ -86,10 +86,23 @@ different measurement, not a comparable one.
 A run against a tree with uncommitted changes is written as `<sha>-dirty.json`
 and is gitignored. It measured no commit, so it cannot be compared to one.
 
+Every case in the file ends in a result. A run that raises — a crash in the code
+under test, or LM Studio going away mid-run — is a failed run whose detail
+reads `raised <Error>: ...`, not a missing case. Before 2026-10-07 a raising case
+left no result at all, and the totals counted only the cases that came back:
+the carry-forward merge, which broke every specialist turn, would have recorded
+the routing and refusal cases alone and read as a clean pass. `totals` now
+carries `cases_expected` beside `cases`, and a run that recorded fewer — a `-k`
+filter, for instance — is written as `<sha>-incomplete.json`. It is not a
+baseline.
+
 It also records what the model was sent (`fingerprint.py`): `prompts` is a short
-hash of each request the evals measure — the router with and without Errand, and
-each specialist at each detail level — built by langchain-openai's own payload
-builder with the question left out, and `packages` the versions that build it.
+hash of each request a turn can send — the router with and without Errand, each
+specialist at each detail level (`tally/normal`), the last step of each, which
+is offered no tools (`tally/normal/final`), and the title call (`title`) — built
+by langchain-openai's own payload builder with the question left out, and
+`packages` the versions that build it. The `/final` and `title` hashes were
+added on 2026-10-07; the others are built as before and compare with older runs.
 Equal hashes mean two runs sent the same prompts, schemas and settings. Unequal
 hashes mean something the model reads changed, whether or not a file under
 `prompts/` did: a docstring pydantic puts in a schema, a constant in
