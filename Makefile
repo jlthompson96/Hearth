@@ -22,7 +22,7 @@ export
 
 API_PORT ?= 8000
 
-.PHONY: dev migrate seed unseed test eval lint fmt install up down logs backup start freeze clean hooks
+.PHONY: dev migrate seed unseed test eval lint fmt install up down logs backup restore grant-ro export load-export start freeze clean hooks
 
 ## dev — docker compose up + backend + frontend
 dev: install up
@@ -141,6 +141,24 @@ endif
 ## backup — a compressed dump of the database, kept outside the repository
 backup: install
 	$(PY) -m scripts.backup
+
+## restore — a dump into an empty database, read-only role included: make restore DUMP=<file> [DB=<name>]
+restore: install
+	@test -n "$(DUMP)" || { echo "Name the dump: make restore DUMP=<file> [DB=<name>]"; exit 1; }
+	$(PY) -m scripts.restore "$(DUMP)" $(if $(DB),--database "$(DB)")
+
+## grant-ro — create or repair the read-only role named in DATABASE_URL_RO
+grant-ro: install
+	$(PY) -m db.roles
+
+## export — every table as JSON lines with a manifest, outside the repository
+export: install
+	$(PY) -m scripts.export $(if $(DB),--database "$(DB)")
+
+## load-export — an export into an empty, migrated database: make load-export DIR=<folder> [DB=<name>]
+load-export: install
+	@test -n "$(DIR)" || { echo "Name the export: make load-export DIR=<folder> [DB=<name>]"; exit 1; }
+	$(PY) -m scripts.export --load "$(DIR)" $(if $(DB),--database "$(DB)")
 
 ## start — Postgres if it is down, then the backend and the frontend
 start: install

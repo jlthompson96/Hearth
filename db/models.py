@@ -307,8 +307,6 @@ class Thread(Base):
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[timestamp]
     updated_at: Mapped[timestamp]
-    #: Retention is a decision, not "forever by default".
-    archived_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
     #: Pinned threads are exempt from retention. Everything else is deleted a
     #: year after its last message (history.store.RETENTION).
     pinned_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
@@ -337,7 +335,6 @@ class Message(Base):
     #: user's own turns.
     agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: The tools an answer called: name, arguments and result. The UI shows the
     #: first two under the answer, so a figure's source survives a reload; the
     #: result is what a follow-up's repeated figure is checked against.
