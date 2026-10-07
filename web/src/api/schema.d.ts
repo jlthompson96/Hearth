@@ -879,6 +879,10 @@ export interface components {
             ungrounded: string[] | null;
             /** Detail */
             detail: string | null;
+            /** Model */
+            model?: string | null;
+            /** Prompt Hash */
+            prompt_hash?: string | null;
             /**
              * Created At
              * Format: date-time

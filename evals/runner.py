@@ -266,6 +266,7 @@ def record(
     reasoning_effort: str | None = None,
     packages: dict[str, str] | None = None,
     prompts: dict[str, str] | None = None,
+    answer_hashes: dict[str, str] | None = None,
 ) -> Path:
     """Write `results/<sha>.json`.
 
@@ -277,6 +278,10 @@ def record(
     with it on. And for what it was sent: `packages` and `prompts` are
     `evals.fingerprint`'s, so two runs can be seen to have measured the same
     requests, or not.
+
+    `answer_hashes` are the prompt hashes a stored answer carries
+    (`agents.provenance`): finding a stored answer's hash here says which runs
+    measured the prompt that produced it.
 
     `expected` is how many cases the file holds. A run that recorded fewer — a
     `-k` filter, or cases lost some other way — is named `-incomplete`, because
@@ -294,6 +299,7 @@ def record(
         "recorded_at": dt.datetime.now().isoformat(timespec="seconds"),
         "packages": packages,
         "prompts": prompts,
+        "answer_hashes": answer_hashes,
         "totals": {
             "cases": len(results),
             "cases_expected": expected,

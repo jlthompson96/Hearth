@@ -273,3 +273,37 @@ def test_a_repeated_figure_is_checked_against_the_earlier_tool_result_not_the_an
 
     assert flagged(first.text) == [["140kg"]]
     assert flagged(again.text) == [["140kg"]]
+
+
+def test_an_answer_reads_back_with_its_model_and_prompt_hash(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agents.loop import LogEvent
+    from modellog import LogEntry
+
+    def _answer(*_: object, **__: object) -> Iterator[Event]:
+        yield RoutedEvent(destination="forge", confidence=0.87, router="constrained-json")
+        yield LogEvent(
+            LogEntry(
+                kind="step",
+                caller="forge",
+                request={},
+                response=None,
+                started_at=dt.datetime(2026, 10, 7, tzinfo=dt.UTC),
+                duration_ms=1,
+                model="a-model",
+            )
+        )
+        yield TokenEvent("Your back squat is logged.")
+        yield DoneEvent()
+
+    monkeypatch.setattr(chat_route, "_events", _answer)
+    from agents import provenance
+
+    monkeypatch.setattr(provenance, "answer_hash", lambda name, detail: "abc123def456")
+
+    thread_id = _ask(client, "How is my squat?")
+    question, answer = client.get(f"/api/threads/{thread_id}").json()["messages"]
+
+    assert (question["model"], question["prompt_hash"]) == (None, None)
+    assert (answer["model"], answer["prompt_hash"]) == ("a-model", "abc123def456")

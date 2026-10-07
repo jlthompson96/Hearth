@@ -13,6 +13,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from agents.provenance import answer_hashes
 from config import get_model_settings
 from evals import fingerprint, runner
 from evals.runner import Case, Result
@@ -45,6 +46,7 @@ def _record(_model_available: tuple[str, str | None]) -> object:
     # that cannot be built should fail the run in a second, not after ten
     # minutes of model calls.
     packages, prompts = fingerprint.package_versions(), fingerprint.prompt_hashes(TODAY)
+    answers = answer_hashes()
     yield
     if not _RESULTS:
         return
@@ -57,6 +59,7 @@ def _record(_model_available: tuple[str, str | None]) -> object:
         reasoning_effort=effort,
         packages=packages,
         prompts=prompts,
+        answer_hashes=answers,
     )
     passing = sum(1 for r in _RESULTS if r.ok)
     runs_passed = sum(r.passed for r in _RESULTS)
