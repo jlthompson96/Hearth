@@ -61,9 +61,10 @@ from ingest.errors import Refused
 
 #: About an 8B model at Q4 with room to spare, on an 8GB card that also holds
 #: the KV cache, the embedding model and the desktop. See the module docstring.
-#: PoC, 2026-09-28: raised from 6 GiB to let gemma-4-12b (7.04 GiB) be tried.
-#: Past CLAUDE.md's ~8B-at-Q4 budget; revert to 6 * 2**30 unless it earns its place.
-MAX_MODEL_BYTES = int(7.5 * 2**30)
+#: Raised to 7.5 GiB on 2026-09-28 so gemma-4-12b (7.04 GiB) could be tried,
+#: and put back on 2026-10-07: past CLAUDE.md's ~8B-at-Q4 budget, contrary to
+#: the README and the tests, and nothing recorded that it earned its place.
+MAX_MODEL_BYTES = 6 * 2**30
 
 #: The window every budget in Hearth is measured against (CLAUDE.md).
 CONTEXT_TOKENS = 8192

@@ -185,10 +185,12 @@ def bound(tools: list[BaseTool]) -> Any:
 
 
 def answer_only() -> Any:
-    """The chat model with no tools, for a turn's last step. Bound to nothing
-    rather than used bare, so the Model log still records the request body the
-    client built rather than a reconstruction of it."""
-    return chat_model().bind()
+    """The chat model with no tools, for a turn's last step, and capped like
+    every other step: this one exists to end the turn, and a model that will
+    not stop talking would otherwise do it here. Bound to nothing rather than
+    used bare, so the Model log still records the request body the client
+    built rather than a reconstruction of it."""
+    return chat_model(max_tokens=MAX_OUTPUT_TOKENS).bind()
 
 
 def opening(
@@ -236,6 +238,11 @@ def run(
         if step and monotonic() > deadline:
             yield DoneEvent(f"stopped after {TURN_SECONDS} seconds without a final answer")
             return
+        # The last step is offered no tools, so it can only answer from what
+        # was fetched. These two lines were lost in the carry-forward merge,
+        # and every specialist turn failed on the names they define.
+        last = step == MAX_STEPS - 1
+        model = answer_only() if last else with_tools
         gathered: AIMessageChunk | None = None
         emitted: list[str] = []
         body = request_body(model, conversation, stream=True)

@@ -234,6 +234,58 @@ def test_every_specialist_step_is_capped_in_tokens(monkeypatch: pytest.MonkeyPat
     assert model.built["max_tokens"] == loop.MAX_OUTPUT_TOKENS
 
 
+def test_every_step_including_the_last_is_capped_in_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The last step is sent with no tools, so it can only answer. It is still
+    a model call, and the cap binds it like every other: a model that will not
+    stop talking does it on whichever step it is given, the one meant to end
+    the turn included. The carry-forward merge dropped the lines that choose
+    this step's model, and every specialist turn failed on a NameError; this
+    is the test that would have said so."""
+    import json
+
+    from langchain_core.messages import AIMessageChunk
+    from langchain_core.tools import tool
+
+    from agents import loop
+
+    built: list[dict[str, object]] = []
+
+    class _CallsAgain:
+        def bind_tools(self, tools: object) -> "_CallsAgain":
+            return self
+
+        def bind(self, **_: object) -> "_CallsAgain":
+            return self
+
+        def stream(self, conversation: object) -> Iterator[AIMessageChunk]:
+            yield AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {"name": "probe", "args": json.dumps({"x": "a"}), "id": "c", "index": 0}
+                ],
+            )
+
+    def build(**kwargs: object) -> _CallsAgain:
+        built.append(kwargs)
+        return _CallsAgain()
+
+    @tool
+    def probe(x: str) -> str:
+        """Always has another answer."""
+        return "ok"
+
+    monkeypatch.setattr(loop, "chat_model", build)
+
+    list(loop.run(caller="probe", system="s", question="q", tools=[probe]))
+
+    # One model with the tools bound for the steps that may fetch, and one with
+    # none for the last step. Both capped.
+    assert len(built) == 2
+    assert [kwargs.get("max_tokens") for kwargs in built] == [loop.MAX_OUTPUT_TOKENS] * 2
+
+
 def test_an_answer_cut_off_at_the_token_limit_is_taken_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
