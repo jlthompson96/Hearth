@@ -40,6 +40,14 @@ checked. Another model's saved length may differ, so the Settings screen shows
 the length each loaded model has, and choosing the model already in use
 reloads it at 8,192.
 
+## Every turn checks the window too
+
+A switch is not the only way a model comes to be loaded: LM Studio loads one on
+first use and reloads an idled one, each at its saved length. So before every
+turn `window_problem` asks — at most once a minute — and loads a model that is
+not loaded at all, or refuses the turn when it is loaded only at another
+length (added 2026-10-07).
+
 ## What a switch cannot promise
 
 A pass rate belongs to a model. `make eval` has measured the models its result
@@ -47,6 +55,8 @@ files name, and no other, and the screen says which.
 """
 
 import json
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -55,9 +65,12 @@ import httpx
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
 
+import llm
 from config import get_model_settings
 from db.models import Preference
 from ingest.errors import Refused
+
+log = logging.getLogger("hearth")
 
 #: About an 8B model at Q4 with room to spare, on an 8GB card that also holds
 #: the KV cache, the embedding model and the desktop. See the module docstring.
@@ -169,6 +182,118 @@ def _unload(http: httpx.Client, instance: dict[str, Any]) -> None:
     http.post(f"{_root()}/api/v1/models/unload", json={"instance_id": instance["id"]})
 
 
+def _load(http: httpx.Client, model: Model) -> None:
+    """Load `model` at `CONTEXT_TOKENS`, or say why LM Studio would not."""
+    response = http.post(
+        f"{_root()}/api/v1/models/load",
+        json={"model": model.key, "context_length": CONTEXT_TOKENS},
+    )
+    if response.status_code >= 400:
+        try:
+            detail = response.json()["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            detail = f"HTTP {response.status_code}"
+        raise ModelRefusedError(f"LM Studio could not load {model.name}: {detail}")
+
+
+# --- the window a turn runs at --------------------------------------------------------
+
+#: How long an answer about the window is believed, either way: once a minute at
+#: most, like Errand's probe, so a turn rarely pays for asking.
+WINDOW_TTL = 60.0
+
+#: (when it was asked, which model, what was wrong or None).
+_window: tuple[float, str, str | None] | None = None
+
+
+def forget_window() -> None:
+    """Ask again on the next turn — after a switch, or in a test."""
+    global _window
+    _window = None
+
+
+def window_problem(client: httpx.Client | None = None) -> str | None:
+    """Why the chat model is not ready to answer at the window every budget
+    assumes, said to be shown — or None when it is ready.
+
+    Every budget here was measured against `CONTEXT_TOKENS`, and LM Studio loads
+    a model on first use, and reloads an idled one, at whatever length it saved
+    for it. `switch` loads at the right length; this covers every other way a
+    model comes to be loaded. Checked before each turn, believed for a minute.
+
+    - Loaded at `CONTEXT_TOKENS`: ready.
+    - Not loaded: loaded now at `CONTEXT_TOKENS`, as `switch` does, rather than
+      left for LM Studio to load at its saved length on the first call.
+    - Loaded only at another length: not ready. Reloading would unload an
+      instance someone may have loaded on purpose, so the turn is refused with
+      the way out — the Settings screen reloads it.
+    - LM Studio's own API not answering: ready as far as anyone can tell. A
+      server that speaks only the OpenAI protocol has no such API, and a guard
+      that cannot see must not stop every question. Logged, so it is not silent.
+    """
+    global _window
+    key = llm.active_chat_model()
+    now = time.monotonic()
+    if _window is not None and _window[1] == key and now - _window[0] < WINDOW_TTL:
+        return _window[2]
+    problem = _check_window(key, client)
+    _window = (time.monotonic(), key, problem)
+    return problem
+
+
+def _check_window(key: str, client: httpx.Client | None) -> str | None:
+    http = client or httpx.Client(timeout=LOAD_TIMEOUT)
+    try:
+        model = next((m for m in catalog(http) if m.key == key), None)
+        if model is None:
+            return (
+                f"LM Studio has no chat model called {key!r}, so there is nothing to answer "
+                "with. Choose one on the Settings screen."
+            )
+        if CONTEXT_TOKENS in model.loaded_contexts:
+            return None
+        if model.loaded_contexts:
+            lengths = " and ".join(f"{n:,}" for n in sorted(set(model.loaded_contexts)))
+            return (
+                f"The chat model is loaded with a {lengths}-token window, and every budget in "
+                f"Hearth assumes {CONTEXT_TOKENS:,}. Reload it at {CONTEXT_TOKENS:,} from the "
+                "Settings screen, then ask again."
+            )
+        _load(http, model)
+        return None
+    except ModelRefusedError as refused:
+        return str(refused)
+    except (httpx.HTTPError, ValueError) as error:
+        log.warning(
+            "context window not checked: LM Studio's API did not answer (%s)",
+            type(error).__name__,
+        )
+        return None
+    finally:
+        if client is None:
+            http.close()
+
+
+def usable(key: str | None, client: httpx.Client | None = None) -> str | None:
+    """A stored choice, if LM Studio still lists it — None, `.env`'s model,
+    when it answers and does not. Kept when LM Studio cannot be asked: at
+    startup it may simply not be running yet."""
+    if key is None:
+        return None
+    http = client or httpx.Client(timeout=LIST_TIMEOUT)
+    try:
+        listed = {m.key for m in catalog(http)}
+    except (httpx.HTTPError, ValueError):
+        return key
+    finally:
+        if client is None:
+            http.close()
+    if key in listed:
+        return key
+    log.warning("the chosen chat model %r is not in LM Studio's list; using .env's CHAT_MODEL", key)
+    return None
+
+
 def switch(conn: sa.Connection, key: str | None, *, client: httpx.Client | None = None) -> str:
     """Make `key` the chat model — None for `.env`'s — and return the key now in
     effect. Refused unless it is offered. Loaded at `CONTEXT_TOKENS` before the
@@ -184,20 +309,15 @@ def switch(conn: sa.Connection, key: str | None, *, client: httpx.Client | None 
     if model.refused:
         raise ModelRefusedError(f"{model.name} is not offered: {model.refused}.")
 
+    # Whatever happens next, a minute-old answer about the window no longer holds:
+    # a reload on the Settings screen is how a refused turn is put right.
+    forget_window()
+
     if CONTEXT_TOKENS not in model.loaded_contexts:
         # Loaded at another length is loaded wrong: every budget assumes this one.
         for instance in _instances(http, target):
             _unload(http, instance)
-        response = http.post(
-            f"{_root()}/api/v1/models/load",
-            json={"model": target, "context_length": CONTEXT_TOKENS},
-        )
-        if response.status_code >= 400:
-            try:
-                detail = response.json()["error"]["message"]
-            except (ValueError, KeyError, TypeError):
-                detail = f"HTTP {response.status_code}"
-            raise ModelRefusedError(f"LM Studio could not load {model.name}: {detail}")
+        _load(http, model)
 
     if previous != target:
         for instance in _instances(http, previous):

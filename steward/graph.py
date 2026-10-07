@@ -38,6 +38,7 @@ import httpx
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 
+import model_choice
 from agents import forge, preflight, tally
 from agents.conversation import Exchange, previous
 from agents.loop import (
@@ -273,6 +274,16 @@ def answer(
     refusal = preflight.check_conversation([last.question] if last else [], question)
     if refusal is not None:
         yield RefusedEvent(refusal.signal, refusal.message)
+        return
+
+    # The router is a model call too, so the model is checked before it: loaded
+    # at the window every budget assumes, or loaded now if it is not loaded at
+    # all. Like a failed route, this is the system's problem and not the
+    # question's, so it is said plainly rather than raised as a refusal.
+    problem = model_choice.window_problem()
+    if problem is not None:
+        yield TokenEvent(problem)
+        yield DoneEvent(f"the chat model is not ready: {problem}")
         return
 
     compiled = graph or build()

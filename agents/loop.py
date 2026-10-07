@@ -29,8 +29,10 @@ from typing import Any, Literal, get_args
 from langchain_core.messages import AIMessageChunk, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
 
+import model_choice
 from agents.conversation import Exchange
 from llm import chat_model
+from model_choice import CONTEXT_TOKENS
 from modellog import Clock, LogEntry, request_body, response_body, tokens
 
 PROMPTS = Path(__file__).resolve().parents[1] / "prompts"
@@ -81,6 +83,11 @@ MAX_OUTPUT_TOKENS = 4000
 #: bounded by MAX_OUTPUT_TOKENS and the client's timeout. Before this, a turn
 #: stalled on every step could run four steps of two 120-second attempts each.
 TURN_SECONDS = 180
+
+#: The share of the window a step may fill before its Model log entry says so.
+#: A turn peaks near 40% of it (agents/conversation.py), so a step past 90% is
+#: one the budgets were not measured for.
+WINDOW_WARNING = 0.9
 
 
 @dataclass(frozen=True)
@@ -226,6 +233,15 @@ def run(
     `caller`, including a model call that failed — the failed one is the entry
     most worth reading.
     """
+    # Checked here as well as in the Steward, for callers that name a specialist
+    # directly — the evals among them, which then measure at the window every
+    # budget assumes. Believed for a minute, so the second check costs nothing.
+    problem = model_choice.window_problem()
+    if problem is not None:
+        yield TokenEvent(problem)
+        yield DoneEvent(f"the chat model is not ready: {problem}")
+        return
+
     with_tools = bound(tools)
     by_name = {t.name: t for t in tools}
 
@@ -260,7 +276,7 @@ def run(
                 _step_entry(caller, body, clock, gathered, f"{type(error).__name__}: {error}")
             )
             raise
-        yield LogEvent(_step_entry(caller, body, clock, gathered))
+        yield LogEvent(_step_entry(caller, body, clock, gathered, _near_the_window(gathered)))
 
         if gathered is None:
             yield DoneEvent("the model returned nothing")
@@ -341,6 +357,25 @@ def run(
     # Falling out of the loop is the cap doing its job. The conditional is the
     # guardrail; this message is only how it explains itself.
     yield DoneEvent(f"stopped after {MAX_STEPS} steps without a final answer")
+
+
+def _near_the_window(reply: AIMessageChunk | None) -> str | None:
+    """Said in the Model log when a step used most of the window, input and
+    output together, by LM Studio's count. A turn peaks near 3,300 of the 8,192
+    tokens (agents/conversation.py); one that nears the whole of it has outgrown
+    the budgets it was measured against, and whatever LM Studio does at the
+    limit — stop, or drop the middle of the conversation — happens without a
+    word. Marked as the step's error, so the run shows it."""
+    spent_in, spent_out = tokens(reply)
+    if spent_in is None:
+        return None
+    used = spent_in + (spent_out or 0)
+    if used < WINDOW_WARNING * CONTEXT_TOKENS:
+        return None
+    return (
+        f"{used:,} of the {CONTEXT_TOKENS:,}-token window used ({spent_in:,} in, "
+        f"{spent_out or 0:,} out) — near the limit every budget here assumes"
+    )
 
 
 def _step_entry(

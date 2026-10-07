@@ -18,7 +18,10 @@ from db.base import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Not disable_existing_loggers: the test and eval harnesses migrate in the
+    # same process as the app, and the default silenced the app's own "hearth"
+    # logger for the rest of the run — warnings included.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # A caller (the test harness) may inject a URL; otherwise use the configured one.
 if not config.get_main_option("sqlalchemy.url", None):

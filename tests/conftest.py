@@ -35,6 +35,19 @@ def _no_search_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(errand, "available", lambda client=None: False)
 
 
+@pytest.fixture(autouse=True)
+def _window_assumed_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every turn asks LM Studio whether the chat model is loaded at the window
+    the budgets assume. `make test` makes no network calls, so every test sees
+    it ready unless it says otherwise (tests/test_context_window.py). The app's
+    startup asks LM Studio whether a stored model choice is still listed; that
+    is kept as stored, for the same reason."""
+    import model_choice
+
+    monkeypatch.setattr(model_choice, "window_problem", lambda client=None: None)
+    monkeypatch.setattr(model_choice, "usable", lambda key, client=None: key)
+
+
 def _urls() -> tuple[URL, URL, URL]:
     """(maintenance, test read-write, test read-only).
 

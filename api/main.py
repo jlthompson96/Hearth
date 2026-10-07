@@ -48,7 +48,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         with writer_connection() as conn:
             removed = store.sweep(conn, now=dt.datetime.now(dt.UTC))
-            llm.use_chat_model(model_choice.chosen(conn))
+            stored = model_choice.chosen(conn)
+        # Outside the transaction: LM Studio is asked, and a connection is not
+        # held open across a request to it. A choice it no longer lists would
+        # otherwise name a missing model on every question until someone found
+        # the Settings screen; one it cannot be asked about is kept.
+        llm.use_chat_model(model_choice.usable(stored))
         if removed:
             log.info("retention: removed %d thread(s) past their retention", removed)
     except Exception as error:  # noqa: BLE001 - startup must not depend on Postgres
