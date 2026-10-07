@@ -54,7 +54,7 @@ flowchart LR
   lmstudio[("LM Studio<br/>localhost:1234<br/>4B chat model")]
   pg[("Postgres 17<br/>hearth")]
   datadir[/"HEARTH_DATA_DIR<br/>real CSVs, outside the repo"/]
-  evals["make eval<br/>61 cases x 3 runs"]
+  evals["make eval<br/>73 cases x 3 runs"]
   evaldb[("hearth_eval<br/>fixture, rebuilt each run")]
 
   subgraph planned["Planned"]
@@ -152,7 +152,7 @@ text is not in this table, because it is not implemented.
 | Rule | Enforced by | Proven by |
 |---|---|---|
 | **Nothing harmful reaches a model** — self-harm, hate speech, disordered eating | `agents/preflight.py`, run before the Steward's router and again in each specialist. On a follow-up it reads the new question together with the earlier ones that model will see, so a request split across turns ("help me lose 10kg" / "in 2 weeks") is refused. A refused question is never sent to any model — not as a turn, not as a title, not later as context. Self-harm gets a reply pointing to 988; hate speech is declined in one line | `tests/test_preflight.py` (113 cases in both directions, including money and gym idioms that must pass), `tests/test_guardrails.py` (every entry point refuses with every model constructor rigged to fail, split requests included), `tests/test_conversation.py` (all 1,681 pairs of allowed questions still pass together) |
-| **1. The model never does arithmetic** | Tools compute every figure; `agents/grounding.py` checks every dollar amount and weight in every answer against the numbers its tools returned, and flags any that no tool produced — shown under the answer and stored with it. A figure repeated on a follow-up counts only if an earlier turn's *tool* returned it, never because an earlier answer said it | `tests/test_grounding.py`, `tests/test_chat_route.py`, `tests/test_threads_route.py`; the evals fail a grounded or caveat case on any ungrounded figure |
+| **1. The model never does arithmetic** | Tools compute every figure; `agents/grounding.py` checks every dollar amount and weight in every answer against the numbers its tools returned, and flags any that no tool produced — shown under the answer and stored with it. A figure repeated on a follow-up counts only if an earlier turn's *tool* returned it, never because an earlier answer said it. Figures written without their sign — "38,250 dollars", "about 38 thousand" — are found by `grounding.unitless` and, until a measured run shows no false positives, reported in each eval case's `notes` rather than flagged | `tests/test_grounding.py`, `tests/test_chat_route.py`, `tests/test_threads_route.py`; the evals fail a grounded or caveat case on any ungrounded figure |
 | **Context is scoped and capped** | `agents/conversation.py`: a follow-up carries at most 3 earlier exchanges and 4,000 characters of them, whole or not at all. Each specialist sees only its own answers — Forge never reads a balance — and the router only the last question and the last line of its answer. Earlier tool results are never sent back | `tests/test_conversation.py` |
 | **2. The model never writes SQL** | Fixed parameterized query functions, run through a read-only Postgres role | `tests/test_readonly_role.py` — the role provably cannot write |
 | **3. No live financial connections** | Data enters by CSV from `HEARTH_DATA_DIR` or by hand. The API takes a file name, never a path or an upload; the folder must be outside the repo | `tests/test_datadir.py`, `tests/test_data_routes.py` |
@@ -160,7 +160,7 @@ text is not in this table, because it is not implemented.
 | **5. Nothing leaves the machine** | Every configured address — model, database, search — must be loopback, private or LAN, or startup fails (`config.local_only`). The one exception, Errand's search, passes `validate_search_query()` first — no amounts, no number of four or more digits, none of `SEARCH_BLOCKED_TERMS` — and every attempt, sent or refused, is written to `search_audit`. A refused search is a `refused` turn and makes no request. Errand is offered to the router only while SearXNG answers | `tests/test_config.py`, `tests/test_egress.py`, `tests/test_errand.py`, `tests/test_steward.py` |
 | **6. No telemetry** | The model connection refuses to build while any tracing variable is on | `tests/test_llm_connection.py` |
 | **7. Iteration caps** | The Steward's hop cap is a conditional edge (6); the specialist loop stops at 4 model calls, 4,000 tokens a call — the last, tool-free call included — and 180 seconds a turn, each set from a probe of the heaviest questions; a routing call stops at 256 tokens and 30 seconds. An answer cut off at the token limit is taken back, not saved as a shorter one | `tests/test_steward.py`, `tests/test_guardrails.py`, `tests/test_chat_route.py`, `tests/test_context_window.py` |
-| **The Model log stays on this machine** | Every prompt and reply — balances included — is kept in Postgres, keyed to its question and deleted with its thread, and after 90 days by default. No export, no tracing service: Langfuse is not wired (it would need Docker here, and its cloud is ruled out by rules 5 and 6) | `tests/test_model_log.py`, `tests/test_preferences.py` |
+| **The Model log stays on this machine** | Every prompt and reply — balances included — is kept in Postgres, keyed to its question and deleted with its thread, and after 90 days by default. `make export` copies it, with every other table, to files on this machine outside the repository; nothing sends it anywhere. No tracing service: Langfuse is not wired (it would need Docker here, and its cloud is ruled out by rules 5 and 6) | `tests/test_model_log.py`, `tests/test_preferences.py` |
 | **The chat model fits the card** | `model_choice.py`: a model is offered only if it is a chat model, was trained for tool use, is no larger than 6 GiB (CLAUDE.md's ~8B at Q4, with room for the KV cache and embeddings), and can switch reasoning off. A switch loads it at 8,192 tokens before unloading the old one, so a failed load changes nothing | `tests/test_model_choice.py` (a fake LM Studio records every load and unload) |
 | **A turn runs at the window its budgets assume** | `model_choice.window_problem()`, before routing and again in the agent loop, believed for a minute: the chat model must be loaded at 8,192 tokens. One not loaded is loaded at that length; one loaded only at another length refuses the turn with a pointer to the Settings reload, rather than unloading an instance behind anyone's back. A step that fills 90% of the window says so in the Model log. A stored model choice LM Studio no longer lists falls back to `.env`'s at startup | `tests/test_context_window.py` |
 | **No setting loosens a guardrail** | `preferences.py`: three preferences, each a fixed list of values — answer length and two retention periods. The hop cap, step cap, follow-up window, pre-flight check and read-only role are shown on the Settings screen locked, and `.env` is never written from a page | `tests/test_preferences.py` |
@@ -183,7 +183,7 @@ measurement found, is in [docs/plan.md](docs/plan.md).
 | 4 | Model connection | Done | Constrained JSON schema-valid 10/10 → **30/30** |
 | 5 | Tally, end to end | Done | Net worth exact to the cent with the coverage gap stated → **3/3** |
 | 6 | Steward and routing | Done | Routing ≥ 90% → **60/60**; a delegation loop stops at 6 hops |
-| 7 | Eval harness | Done | A prompt edit moves a number → caveat cases 3/3 → 0/3 → 3/3; baseline **57/61, 173/183** with follow-ups (full runs vary — see plan) |
+| 7 | Eval harness | Done | A prompt edit moves a number → caveat cases 3/3 → 0/3 → 3/3; baseline **57/61, 173/183** with follow-ups; latest **69/73** (`c1ad567`) — full runs vary, see plan |
 | 8 | Thread history and follow-ups | Done | Last week's thread found by a word you remember → found by "squat" and by "squatting"; "yes" to an offer is understood |
 | 9 | Errand and egress (web search) | **Built; waiting on SearXNG** — it needs Docker or a native install. Until it answers, the router is never offered Errand | A prompt engineered to leak a balance into a search raises `EgressViolation` → refused, audited, nothing sent (through the graph; end to end awaits SearXNG) |
 | 10 | RAG over documents | **Blocked** — pgvector needs an MSVC build | Retrieval traceable per answer; context stays within budget |
@@ -552,7 +552,7 @@ refused inside the repository.
 ## Measuring behaviour
 
 `make test` and `make eval` answer different questions and are deliberately separate.
-`make test` asserts facts, needs no model, and finishes in about three seconds — it is the
+`make test` asserts facts, needs no model, and finishes in about ten seconds — it is the
 loop you run after every edit. `make eval` measures behaviour against the real model over
 `evals/cases.yaml`, three runs per case, and records the result to `evals/results/<sha>.json`.
 
@@ -665,8 +665,10 @@ recovery path for a normalizer bug found after the export is gone.
 Balances can also be entered by hand, as US currency; a liability is negative.
 
 Conversations are stored in `thread` and `message`, searchable from the chat's thread
-panel, and kept for a year after their last message. Pinned threads are kept. There are no
-live financial connections, and there will not be.
+panel, and kept for a year after their last message. Pinned threads are kept. Each
+answer records the model that gave it and a hash of the prompt behind it, so it can be
+matched to the eval runs that measured that prompt long after its Model log entries
+have expired. There are no live financial connections, and there will not be.
 
 ## What leaves the machine
 
@@ -676,4 +678,5 @@ logged to the `search_audit` table, with a view in the UI (Phase 9).
 
 There is no third-party telemetry anywhere — no analytics, no error reporting,
 `LANGCHAIN_TRACING_V2=false`. The Model log is the local answer to a tracing service: it
-keeps every prompt and reply in Postgres on this machine, with no export.
+keeps every prompt and reply in Postgres on this machine; `make export` writes it to
+files on the same machine, and nothing sends it anywhere.
