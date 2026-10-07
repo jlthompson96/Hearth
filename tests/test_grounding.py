@@ -1,6 +1,8 @@
 """Every figure in an answer should be one a tool produced (rule 1, at runtime)."""
 
-from agents.grounding import ungrounded
+import pytest
+
+from agents.grounding import ungrounded, unitless
 
 TOOL = """net worth 2026-01-01 to 2026-09-20
   2026-01-31  $123,400.00
@@ -120,3 +122,71 @@ def test_a_date_in_the_question_does_not_ground_an_amount() -> None:
     question = "what was my net worth on 2026-01-31?"
 
     assert ungrounded("It rose by $31.", ["$38,250.00"], [question]) == ["$31"]
+
+
+# --- figures written without the sign of their kind (2026-10-07) -----------------
+#
+# A dollar sign, a weight unit or a percent sign is what told the check a number
+# was a figure. A model that wrote "38,250 dollars" or "about 38 thousand" walked
+# past it. These are reported (`unitless`) and flagged only when asked
+# (`strict=True`) until a measured eval run shows what they catch.
+
+RETURNED = ["change over the period: +$38,250.00", "total of these holdings: $27,600.00"]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Your net worth rose 38,250 dollars.",
+        "That is 38250 USD more than in January.",
+        "It went up by 38,250 over the period.",
+        "Your holdings come to 27,600.",
+    ],
+)
+def test_an_exact_figure_without_its_sign_is_grounded(answer: str) -> None:
+    assert unitless(answer, RETURNED) == []
+
+
+@pytest.mark.parametrize(
+    ("answer", "figure"),
+    [
+        ("Your net worth rose 38,000 dollars.", "38,000 dollars"),
+        ("It went up by about 38 thousand.", "38 thousand"),
+        ("It went up by about $38.2k.", "$38.2k"),
+        ("It went up by 38,200 this year.", "38,200"),
+    ],
+)
+def test_a_figure_without_its_sign_that_no_tool_returned_is_reported(
+    answer: str, figure: str
+) -> None:
+    assert unitless(answer, RETURNED) == [figure]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Your records for 2026-07-31 are missing an account.",
+        "That was in 2026, in July.",
+        "You did 5 reps at your heaviest.",
+        "You hold quantity 120 of VTI.",
+        "Your net worth rose $38,250.00.",
+        "Your squat went up 17.5 kg.",
+    ],
+)
+def test_dates_years_counts_and_signed_figures_are_not_its_business(answer: str) -> None:
+    assert unitless(answer, RETURNED) == []
+
+
+def test_a_bare_figure_the_question_carried_may_be_quoted_back() -> None:
+    assert unitless("Over 40,000, yes.", RETURNED, ["is my net worth over 40,000?"]) == []
+
+
+def test_a_bare_quantity_the_tool_wrote_without_commas_is_grounded() -> None:
+    assert unitless("You hold 1,200 shares.", ["    VTI  quantity 1200 at $72.00"]) == []
+
+
+def test_strict_adds_them_to_the_flags_and_the_default_does_not() -> None:
+    answer = "Your net worth rose $38,250.00, or about 38 thousand."
+
+    assert ungrounded(answer, RETURNED) == []
+    assert ungrounded(answer, RETURNED, strict=True) == ["38 thousand"]

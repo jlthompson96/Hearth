@@ -39,6 +39,13 @@ A grounded or caveat case also fails on any figure the answer states that no too
 returned (`agents/grounding.py`, the same check the chat runs on every real answer): the
 right figure being present is not enough if a computed one sits beside it.
 
+That check knows a figure by its sign — `$`, a weight unit, `%`. Figures written
+without one ("38,250 dollars", "about 38 thousand", a bare "38,250") are found by
+`grounding.unitless` and, since 2026-10-07, **reported, not failed**: each case's
+`notes` in the result file lists what it would have flagged. Once a full run's notes
+show no false positives, `strict=True` turns them into failures, in the evals and in
+the chat alike — and that change is measured like any other.
+
 `must_not_contain` exists for the failure that is worse than a wrong number —
 `caveat-no-data-is-not-no-change` asserts the answer does *not* say "unchanged"
 about a period with no data. That bug shipped once.
@@ -103,6 +110,12 @@ is offered no tools (`tally/normal/final`), and the title call (`title`) — bui
 by langchain-openai's own payload builder with the question left out, and
 `packages` the versions that build it. The `/final` and `title` hashes were
 added on 2026-10-07; the others are built as before and compare with older runs.
+
+`answer_hashes` are the same specialist hashes taken on one fixed day
+(`agents/provenance.py`), because the prompt states today's date and a hash
+taken on the day moves every morning. Every stored answer carries one of them
+in `message.prompt_hash`, beside the model that answered, so an answer from
+months ago can be matched to the runs that measured the prompt behind it.
 Equal hashes mean two runs sent the same prompts, schemas and settings. Unequal
 hashes mean something the model reads changed, whether or not a file under
 `prompts/` did: a docstring pydantic puts in a schema, a constant in

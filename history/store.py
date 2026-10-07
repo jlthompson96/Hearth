@@ -64,6 +64,8 @@ class StoredMessage:
     confidence: Decimal | None
     ungrounded: list[str] | None
     detail: str | None
+    model: str | None
+    prompt_hash: str | None
     created_at: dt.datetime
 
 
@@ -102,6 +104,8 @@ def add_message(
     confidence: Decimal | None = None,
     ungrounded: list[str] | None = None,
     detail: str | None = None,
+    model: str | None = None,
+    prompt_hash: str | None = None,
 ) -> uuid.UUID:
     # clock_timestamp, not now(): now() is the transaction's start, and two
     # messages written in one transaction would tie and read back in any order.
@@ -118,6 +122,8 @@ def add_message(
             confidence=confidence,
             ungrounded=ungrounded,
             detail=detail,
+            model=model,
+            prompt_hash=prompt_hash,
             created_at=stamp,
         )
         .returning(Message.id)
@@ -221,6 +227,8 @@ _MESSAGE_COLUMNS = (
     Message.confidence,
     Message.ungrounded,
     Message.detail,
+    Message.model,
+    Message.prompt_hash,
     Message.created_at,
 )
 

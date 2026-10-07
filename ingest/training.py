@@ -121,10 +121,18 @@ def record_workout(
     kind: str = "strength",
     duration_minutes: Decimal | None = None,
     notes: str | None = None,
+    workout_id: uuid.UUID | None = None,
 ) -> WorkoutView:
     """`performed_on` is required and never defaulted. Sets are numbered in the
     order given, counting within each exercise, which is how a lifter counts
-    them. Every set is checked before anything is written."""
+    them. Every set is checked before anything is written.
+
+    `workout_id` names the entry, and the form sends one of its own. The same
+    id again — a double click, a request retried after a dropped connection —
+    is the same entry: the session already stored comes back, and nothing is
+    written twice. The same id with a different session is refused, because
+    one of the two is not what was meant and only the person knows which.
+    Without an id, two identical sessions on one day are two sessions."""
     refuse_if_fixture(conn)
 
     if kind not in KINDS:
@@ -155,29 +163,84 @@ def record_workout(
             _refuse_another_unit(conn, exercise)
         named.append((exercise, entered))
 
-    workout_id = conn.execute(
-        sa.insert(Workout)
-        .values(
-            performed_on=performed_on, kind=kind, duration_minutes=duration_minutes, notes=notes
-        )
-        .returning(Workout.id)
-    ).scalar_one()
-
     counted: Counter[str] = Counter()
+    planned: list[SetView] = []
     for exercise, entered in named:
         counted[exercise] += 1
-        conn.execute(
-            sa.insert(WorkoutSet).values(
-                workout_id=workout_id,
-                exercise=exercise,
-                set_number=counted[exercise],
-                reps=entered.reps,
-                weight=entered.weight,
-                weight_unit=WEIGHT_UNIT if entered.weight is not None else None,
-            )
-        )
+        unit = WEIGHT_UNIT if entered.weight is not None else None
+        planned.append(SetView(exercise, counted[exercise], entered.reps, entered.weight, unit))
+    asked = WorkoutView(
+        workout_id or uuid.uuid4(), performed_on, kind, duration_minutes, notes, tuple(planned)
+    )
 
-    return next(w for w in _workouts(conn, sa.true()) if w.id == workout_id)
+    if workout_id is not None:
+        stored = _one(conn, workout_id)
+        if stored is not None:
+            return _same_entry(stored, asked)
+
+    values: dict[str, object] = {
+        "performed_on": performed_on,
+        "kind": kind,
+        "duration_minutes": duration_minutes,
+        "notes": notes,
+    }
+    if workout_id is not None:
+        values["id"] = workout_id
+    try:
+        # A savepoint, so a double click whose twin committed first can still
+        # be answered: the second insert waits on the first, fails on the id,
+        # and the session the first stored is what comes back.
+        with conn.begin_nested():
+            created = conn.execute(
+                sa.insert(Workout).values(**values).returning(Workout.id)
+            ).scalar_one()
+            for s in planned:
+                conn.execute(
+                    sa.insert(WorkoutSet).values(
+                        workout_id=created,
+                        exercise=s.exercise,
+                        set_number=s.set_number,
+                        reps=s.reps,
+                        weight=s.weight,
+                        weight_unit=s.unit,
+                    )
+                )
+    except sa.exc.IntegrityError:
+        stored = _one(conn, workout_id) if workout_id is not None else None
+        if stored is None:
+            raise
+        return _same_entry(stored, asked)
+
+    view = _one(conn, created)
+    assert view is not None
+    return view
+
+
+def recorded(conn: sa.Connection, workout_id: uuid.UUID) -> bool:
+    """Whether an entry by this id is already stored."""
+    return _one(conn, workout_id) is not None
+
+
+def _one(conn: sa.Connection, workout_id: uuid.UUID) -> WorkoutView | None:
+    found = _workouts(conn, Workout.id == workout_id)
+    return found[0] if found else None
+
+
+def _same_entry(stored: WorkoutView, asked: WorkoutView) -> WorkoutView:
+    """The stored session, if it is the one asked for again; refused if the id
+    names a different one. Weights compare as values, so 225 is 225.000."""
+    if (stored.performed_on, stored.kind, stored.duration_minutes, stored.notes, stored.sets) == (
+        asked.performed_on,
+        asked.kind,
+        asked.duration_minutes,
+        asked.notes,
+        asked.sets,
+    ):
+        return stored
+    raise Conflict(
+        "This entry was already recorded, with different details. If the first was a "
+        "mistake, remove it and record this one; if not, start a new entry."
+    )
 
 
 def remove_workout(conn: sa.Connection, workout_id: uuid.UUID) -> None:

@@ -560,6 +560,53 @@ build. Langfuse Cloud is out regardless — it would carry every prompt, balance
 off the machine (rules 5 and 6). The Model log covers the trace view locally. Revisit with
 SearXNG if Docker is fixed, with Langfuse's own telemetry switched off.
 
+## The GenAI review (2026-10-07)
+
+A review for output quality, reliability and data portability
+(`docs/reviews/genai-review-2026-10-07.md`, with its plan beside it) opened on a
+finding that outranked the rest: **`main` could not answer a single finance or
+training question.** The carry-forward merge had dropped the two lines in
+`agents/loop.py` that choose a step's model, and every specialist turn raised
+`NameError`. Three merges had reached `main` with no test, lint or eval between
+them, and the eval recorder would have hidden it — a case that raised left no result,
+so a full run would have recorded the routing and refusal cases alone and read as a
+clean pass.
+
+What came of it, on nine stacked branches (see the status document for the order):
+
+- **The loop, restored and capped** — the tool-free last step now carries the token
+  cap too — and the model size limit back to the 6 GiB the README promised.
+- **A crash is a failed eval run**, a short run is named `-incomplete`, and the
+  fingerprint covers the last step and the title call.
+- **CI** runs lint and tests on every pull request against a throwaway Postgres, and
+  fails one that changes a watched path without a recorded eval run. The hook and CI
+  read one list, `.githooks/watched-paths`; it now covers all of `tools/`, where the
+  caveat sentences are written.
+- **The window a turn runs at is checked**, before routing and in the loop: a model not
+  loaded is loaded at 8,192, one loaded at another length refuses the turn. The router,
+  the one uncapped call, stops at 256 tokens and 30 seconds — set from its reply's size,
+  to be checked against the host's Model log.
+- **A backup restores onto a new machine.** `pg_dump` carries no roles, and the read-only
+  role's migration never runs again on a restored database, so `make restore` makes the
+  role itself; a round-trip test proves it with the real programs. `make export` writes
+  every table as JSON lines with a manifest, money as exact strings, and `make
+  load-export` puts it back.
+- **Each answer names its model and prompt hash**, so an answer outlives the 90-day Model
+  log without losing what produced it. The hash is taken on a fixed day, because the
+  prompt states the date, and every eval run records the same hashes.
+- **Figures without their sign** — "38,250 dollars", "about 38 thousand" — are found and,
+  until a measured run says otherwise, reported rather than failed.
+- **A workout sent twice is stored once.**
+
+Two things found on the way that the tests alone missed: the export, run as a command
+rather than from a test, found no tables, because nothing in a fresh process had imported
+the models; and Alembic's default logging setup silenced the app's own logger for the rest
+of any run that migrated in-process — the test and eval harnesses both do.
+
+Not yet measured: the host had no LM Studio running and no `.env` or Postgres in this
+checkout, so a development cluster was made for the tests and **no eval was run**. Three
+branches need one before they merge, the first of them the fix to `main`.
+
 ## Cut deliberately
 
 Voice (no VRAM), a third agent (more tools beat more agents at this size), proactive

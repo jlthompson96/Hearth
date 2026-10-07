@@ -491,12 +491,15 @@ make eval         # the behavioural case file — needs the model, takes minutes
 make lint         # ruff + mypy + tsc
 make start        # Postgres if it is down, then the backend and the frontend
 make backup       # a compressed dump of the database, outside the repository
+make restore DUMP=<file>   # a dump into an empty database, read-only role included
+make export       # every table as JSON lines with a manifest, outside the repository
 ```
 
 Also available: `make up` / `make down` / `make logs` for infrastructure alone, `make fmt`
 to apply formatting, `make hooks` to install the pre-commit reminder, `make freeze` to
-pin the installed versions into `requirements.lock`, and `make clean` to remove both
-toolchains.
+pin the installed versions into `requirements.lock`, `make grant-ro` to create or repair
+the read-only role, `make load-export DIR=<folder>` to load an export into an empty
+database, and `make clean` to remove both toolchains.
 
 ## Running it day to day
 
@@ -514,14 +517,37 @@ write inside the repository: a dump is the whole database in one file, and that 
 never be committed. The password goes to `pg_dump` in the environment, never on the
 command line where other processes can read it.
 
+Each dump is read back with `pg_restore --list` before it counts; one that cannot be read
+is deleted rather than kept as a backup that is not one.
+
 Imports can always be run again from the CSVs in `$HEARTH_DATA_DIR`. Everything else —
 balances entered by hand, every thread, the model log — exists only in Postgres, which is
-what makes the dump worth taking. To restore one:
+what makes the dump worth taking.
+
+**Restoring** — here, or on a new machine:
 
 ```bash
-createdb -U <user> hearth
-pg_restore -U <user> -d hearth --clean --if-exists <the .dump file>
+make restore DUMP=<the .dump file>               # into DATABASE_URL's database
+make restore DUMP=<the .dump file> DB=checking   # into another, to look without touching
 ```
+
+It refuses a database that already holds tables, creates it if it does not exist, restores
+without the dump's ownership and grants, and then makes the read-only role the query tools
+connect as, from `DATABASE_URL_RO`. That last step is the one a plain `pg_restore` misses:
+`pg_dump` carries no roles, so on a new cluster the role does not exist, and the migration
+that made it never runs again on a database that already records the newest revision.
+`make grant-ro` does the same step on its own. `tests/test_restore.py` runs the whole round
+trip with the real programs.
+
+**Exporting.** `make export` writes every table as JSON lines — one `<table>.jsonl` each,
+and a `manifest.json` with each file's row count and SHA-256, the Alembic revision, the
+commit and the models in use — to `%LOCALAPPDATA%\Hearth\exports`, or `HEARTH_EXPORT_DIR`.
+It is the copy that does not need Postgres to read: money is written as the exact decimal
+string (`"38250.00"`), never a JSON number, and timestamps keep their offset. It reads
+through the read-only role, so taking one changes nothing. `make load-export DIR=<folder>`
+puts one back into an empty database migrated to the same revision, and refuses a file
+whose checksum does not match. Like a dump, an export is every balance in plain text, and is
+refused inside the repository.
 
 ## Measuring behaviour
 

@@ -69,6 +69,10 @@ class NewSet(BaseModel):
 
 
 class NewWorkout(BaseModel):
+    #: The entry's own id, chosen by the form. The same id sent again — a double
+    #: click, a retry — is the same entry and is stored once; with a different
+    #: session it is refused. Without one, every post is a new session.
+    id: uuid.UUID | None = None
     #: Required, with no default (CLAUDE.md: a date never defaults to today).
     performed_on: dt.date
     kind: str = "strength"
@@ -119,9 +123,9 @@ def list_training() -> TrainingListing:
     response_model=WorkoutOut,
     status_code=201,
     responses=REFUSALS,
-    summary="Record a workout by hand",
+    summary="Record a workout by hand; 200 when the same entry was already recorded",
 )
-def record_workout(request: NewWorkout) -> WorkoutOut:
+def record_workout(request: NewWorkout, response: Response) -> WorkoutOut:
     sets = [
         training.SetIn(
             exercise=s.exercise,
@@ -131,6 +135,7 @@ def record_workout(request: NewWorkout) -> WorkoutOut:
         for i, s in enumerate(request.sets, start=1)
     ]
     with writer_connection() as conn:
+        again = request.id is not None and training.recorded(conn, request.id)
         view = training.record_workout(
             conn,
             performed_on=request.performed_on,
@@ -138,7 +143,10 @@ def record_workout(request: NewWorkout) -> WorkoutOut:
             duration_minutes=request.duration_minutes,
             notes=request.notes,
             sets=sets,
+            workout_id=request.id,
         )
+    if again:
+        response.status_code = 200
     return _workout(view)
 
 

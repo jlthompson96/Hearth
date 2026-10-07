@@ -15,6 +15,8 @@ log can say how many tokens were spent reasoning but not what they said.
 """
 
 import datetime as dt
+import hashlib
+import json
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -51,6 +53,15 @@ class Clock:
     @property
     def ms(self) -> int:
         return round((time.perf_counter() - self._t0) * 1000)
+
+
+def digest(body: dict[str, Any]) -> str:
+    """A short hash of a request body, the model's name left out: the same
+    prompts, schemas and settings sent to another model are the same request.
+    The eval fingerprint and each stored answer's prompt hash are both this."""
+    kept = {k: v for k, v in body.items() if k != "model"}
+    encoded = json.dumps(kept, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:12]
 
 
 def request_body(model: Any, messages: Sequence[Any], **extra: Any) -> dict[str, Any]:

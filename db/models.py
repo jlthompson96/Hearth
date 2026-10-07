@@ -307,8 +307,6 @@ class Thread(Base):
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[timestamp]
     updated_at: Mapped[timestamp]
-    #: Retention is a decision, not "forever by default".
-    archived_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
     #: Pinned threads are exempt from retention. Everything else is deleted a
     #: year after its last message (history.store.RETENTION).
     pinned_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
@@ -337,7 +335,6 @@ class Message(Base):
     #: user's own turns.
     agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: The tools an answer called: name, arguments and result. The UI shows the
     #: first two under the answer, so a figure's source survives a reload; the
     #: result is what a follow-up's repeated figure is checked against.
@@ -353,6 +350,14 @@ class Message(Base):
     #: How much the answer was asked to say — brief, normal or detailed — so a
     #: rerun at another level is labelled as one after a reload.
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The model that gave a specialist's answer, as LM Studio was asked for it.
+    #: The Model log says the same for 90 days; this keeps it as long as the
+    #: answer, through any change of model on the Settings screen.
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: A hash of what the specialist was told — prompt, tool schemas, settings —
+    #: without the question or the day (agents/provenance.py). Every eval run
+    #: records the same hashes, so this finds the runs that measured the prompt.
+    prompt_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[timestamp]
 
     thread: Mapped[Thread] = relationship(back_populates="messages")
