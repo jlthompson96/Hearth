@@ -1,6 +1,6 @@
 # Hearth — Project Status
 
-As of 2026-09-28. What has been built, how it was verified, where each piece of work sits
+As of 2026-10-07. What has been built, how it was verified, where each piece of work sits
 right now, and everything that is left, in the order it should be done.
 
 The phase plan and the reasoning behind each decision live in [plan.md](plan.md); the
@@ -57,24 +57,36 @@ there is no telemetry; and every guardrail lives in code, not in a prompt.
 
 ### Branches
 
-| Branch | State | What it holds |
-|---|---|---|
-| `main` | merged | Phases 0–8 and 11, Phase 9's code, and review findings 1, 2, 4, 5 and 8 |
-| `turn-limits` | **pushed, not merged** | Finding 7 — token and time limits on a turn — and the provisional-text fix. Eval: 69/72 |
-| `carry-forward` | **pushed, not merged** | Finding 6 — balances carried forward up to 45 days. Eval: 70/73 |
-| working tree on `carry-forward` | **uncommitted, in progress** | A rewording of the `caveat:` sentences, a tool-free final step in the agent loop, and prompt edits — 9 files, from another session |
+`turn-limits`, `carry-forward` and the in-progress caveat rewording all reached `main`
+on 2026-09-28 (PRs #4–#6) — the rewording inside commit `136b318`, without the rebase,
+test run and eval the plan below had set for it. The merge that brought it in,
+`52f975e`, dropped the two lines in `agents/loop.py` that choose a step's model, and
+**every Tally and Forge turn on `main` raises `NameError`** (17 tests fail there).
 
-`turn-limits` and `carry-forward` touch different files except the README, in different
-rows, and merge cleanly in either order. The in-progress work overlaps `turn-limits` in
-`agents/loop.py` and must be rebased onto it (see [section 9](#9-what-is-left-in-order)).
+The GenAI review of 2026-10-07 (`docs/reviews/`) found it, and its fixes are on a stack
+of local branches, each built on the one before and none yet pushed:
+
+| Branch | Holds | Eval run before merging? |
+|---|---|---|
+| `fix-agent-loop` | The review and plan; the loop restored, its last step capped; the model size limit back to 6 GiB | **Yes** — first measurement of `136b318`'s caveat rewording too |
+| `eval-recording` | A crash is a failed eval run; `-incomplete` results; final-step and title hashes | Optional — no request changed |
+| `merge-gate` | CI: lint and tests on every pull request, and a check that a watched change brings an eval result | No |
+| `turn-guards` | The context window checked before each turn; the router capped at 256 tokens and 30 s | **Yes** — the router's request changed |
+| `portable-data` | `make restore` that works on a new cluster; `make export` / `load-export`; unused columns dropped | No |
+| `answer-provenance` | Each stored answer names its model and prompt hash | No — label `no-eval-needed`; the bytes are unchanged |
+| `grounding-unitless` | Figures without `$`, a unit or `%` found, reported by the evals, not yet failed | **Yes** — that run is the measurement |
+| `workout-idempotency` | A workout sent twice is stored once | No |
+| `housekeeping` | SearXNG pinned; this document and the plan brought up to date | No |
 
 ### Numbers
 
-- **Tests:** about 700 (`make test`), all passing on every committed branch, in a few
-  seconds, with no model. Two model tests are deselected by default (`pytest -m model`).
-- **Eval cases:** 72 on `main`, 73 on `carry-forward` (`make eval`, three runs each,
-  about 27 minutes on the host).
-- **Latest full eval:** 70/73 cases, 208/219 runs, on `carry-forward` (`7bb7ebb`).
+- **Tests:** 795 (`make test`) on `housekeeping`, all passing, in about ten seconds, with
+  no model. On `main`, 692 pass and 17 fail. Two model tests are deselected by default
+  (`pytest -m model`).
+- **Eval cases:** 73 (`make eval`, three runs each, about 27 minutes on the host).
+- **Latest full eval:** 70/73 cases, 208/219 runs, on `carry-forward` (`7bb7ebb`). Nothing
+  after it has been measured: no LM Studio was running on the host for the 2026-10-07
+  work, and the host's checkout had no `.env` and no Postgres.
 
 ### In one paragraph
 
@@ -327,7 +339,7 @@ Written in place of Starlette's `TrustedHostMiddleware`, which misreads `[::1]:8
 `localhost` resolves to IPv6 first on the host. Checked against a live server.
 *Commit `b4100b8`.*
 
-### Done, pushed, waiting to merge
+### Done, and merged on 2026-09-28 (PRs #4–#6)
 
 **Finding 7 — no limit on how long or how much a turn could generate** (`turn-limits`).
 Both limits were measured before they were set, over the heaviest eval questions:
@@ -360,7 +372,7 @@ July (61 days — a gap), so it holds both cases; the headline `$38,250.00` did 
 
 **Finding 3 — the egress filter checks a number's shape, not its value.** "is 38,250
 dollars a good net worth" and "38.2k" pass; "who won the 2024 world series" is refused.
-Must be fixed before SearXNG goes live. See [section 9](#9-what-is-left-in-order), item 4.
+Must be fixed before SearXNG goes live. See [section 9](#9-what-is-left-in-order), item 5.
 
 **Finding 9 — chat stream event types are hand-copied** in `web/src/api/chat.ts` rather
 than generated from the API schema like every other type.
@@ -409,29 +421,29 @@ request now carries `max_tokens` — and the router's did not, which is the poin
 
 ### Land what is built
 
-**1. Merge `turn-limits`.** Token and time limits, the provisional-text fix, and its eval
-result. Merges cleanly.
+**1. Put `main` right.** Push `fix-agent-loop`, run `make eval` on the host, commit the
+result, and merge. That eval is also the first measurement of the caveat rewording that
+reached `main` unmeasured in `136b318`: compare it with `7bb7ebb`'s 70/73, and settle any
+caveat case that moves with an interleaved A/B rather than by reading one run.
 
-**2. Merge `carry-forward`.** Carried balances and its eval result. Merges cleanly with
-`turn-limits` in either order.
+**2. Turn the gate on.** Merge `eval-recording` and `merge-gate`, then require the
+`check` and `eval-recorded` checks on `main` in GitHub's branch protection. Until that
+setting is on, the workflows report and block nothing.
 
-**3. Finish the caveat-rewording work** (uncommitted, in the working tree, from another
-session). It rewrites the `caveat:` sentences to read naturally aloud, adds a final agent
-step with no tools bound (so a turn that spent its steps fetching still answers), and
-edits all three prompts.
-- Rebase onto `main` after steps 1 and 2. `agents/loop.py` needs both sets of changes
-  combined by hand: the deadline check and token-limit take-back from `turn-limits`, and
-  the tool-free final step from this work.
-- Run `make test` on the rebased result. The in-progress edits already update the tests
-  whose expected wording changed (`test_finance_tools.py`, `test_bindings.py`), but the
-  combined `loop.py` is new code and needs the full suite.
-- Run a full `make eval`. The wording is prompt text, so request hashes will change. The
-  new wording keeps ISO dates and "carried forward", so the caveat cases should hold.
-- Merge.
+**3. Merge the rest in order**, each through a pull request so the gate sees it:
+`turn-guards` (with an eval run — the router's request changed; and check
+`ROUTER_MAX_TOKENS` against `select max(output_tokens) from model_log where kind =
+'route'`), `portable-data`, `answer-provenance` (label `no-eval-needed`), then
+`grounding-unitless` (with an eval run, whose `notes` say what strict grounding would
+flag), `workout-idempotency` and `housekeeping`.
+
+**4. Enforce strict grounding** once a full run's notes show no false positives:
+`ungrounded(..., strict=True)` in the chat route and the eval runner, measured like any
+other change.
 
 ### Before SearXNG goes live
 
-**4. Finding 3 — make the egress check value-aware.** Normalise the numbers in a query
+**5. Finding 3 — make the egress check value-aware.** Normalise the numbers in a query
 (`38,250`, `38250`, `38.2k`, `38 thousand`) and refuse any within a small tolerance of a
 recorded balance or holding, read through the read-only role. Keep the shape rules as a
 backstop. Relaxing the four-digit rule for years (1900–2099) weakens a rule-5 guard and is
@@ -439,40 +451,40 @@ a decision for you, once the value check exists. Must land before Errand can sea
 
 ### Small cleanups, any order
 
-**5. Finding 10 — the hop cap's off-by-one.** Check `>= MAX_HOPS` in `_after_specialist`
+**6. Finding 10 — the hop cap's off-by-one.** Check `>= MAX_HOPS` in `_after_specialist`
 so the halt comes before the seventh router call; tighten the test to `== MAX_HOPS`.
 
-**6. Finding 11 — `ingest` importing from `scripts`.** Move `FIXTURE_ACCOUNT_IDS` (and the
+**7. Finding 11 — `ingest` importing from `scripts`.** Move `FIXTURE_ACCOUNT_IDS` (and the
 id derivation it needs) into a module both can import.
 
-**7. Finding 9 — generated event types.** Declare each SSE event as a pydantic model the
+**8. Finding 9 — generated event types.** Declare each SSE event as a pydantic model the
 OpenAPI schema includes, so `npm run gen:types` produces them.
 
 ### Behaviour the evals keep surfacing
 
-**8. Forge restates remembered figures.** Asked "should I add more weight next week?"
+**9. Forge restates remembered figures.** Asked "should I add more weight next week?"
 after a squat answer, Forge declines as it should — then repeats squat figures from its
 earlier answer without calling a tool, which the grounding check correctly flags. Prompt
 work, settled by an interleaved A/B.
 
-**9. Dropped cents in the detailed positions answer.** `grounded-detailed-positions` writes
+**10. Dropped cents in the detailed positions answer.** `grounded-detailed-positions` writes
 "$27,600" for "$27,600.00" and has failed every run since before MVP 1. Same approach.
 
-**10. Try the evals at one parallel slot.** LM Studio loads the model with four. Loading
+**11. Try the evals at one parallel slot.** LM Studio loads the model with four. Loading
 it with one for an eval run is a cheap test of whether batching causes the run-to-run
 drift.
 
 ### Blocked on the machine
 
-**11. SearXNG** — Phase 9's end-to-end test. Needs a working Docker or a native install.
+**12. SearXNG** — Phase 9's end-to-end test. Needs a working Docker or a native install.
 
-**12. pgvector** — Phase 10. Needs an MSVC build on Windows; then install it, assert it in
+**13. pgvector** — Phase 10. Needs an MSVC build on Windows; then install it, assert it in
 the test harness, and build retrieval.
 
-**13. Phase 12, MCP** — after 11 and 12, so its tool-schema budget can be set against a
+**14. Phase 12, MCP** — after 12 and 13, so its tool-schema budget can be set against a
 window that already holds retrieved chunks.
 
-**14. The first real weight-history import** — the dry run read all 809 rows; the import
+**15. The first real weight-history import** — the dry run read all 809 rows; the import
 itself is the test of what the file's screenshot could not show.
 
 ---
@@ -482,8 +494,8 @@ itself is the test of what the file's screenshot could not show.
 | Case | Pass rate | What happens | Status |
 |---|---|---|---|
 | `route-followup-training-advice` | 0/3, every run | "should I add more weight next week?" after a squat answer routes to Forge, not `unsupported`. Forge then declines in one line (`caveat-followup-advice-is-declined`) | Known since Phase 8; kept in the case file so it stays measured |
-| `grounded-detailed-positions` | 0/3, every run | Drops the cents from `$27,600.00` | Item 9 above |
-| `caveat-followup-advice-is-declined` | 1–2/3 | Forge restates remembered figures | Item 8 above |
+| `grounded-detailed-positions` | 0/3, every run | Drops the cents from `$27,600.00` | Item 10 above |
+| `caveat-followup-advice-is-declined` | 1–2/3 | Forge restates remembered figures | Item 9 above |
 | `caveat-1rm-is-an-estimate` | 0/3 to 3/3 | Varies with run state; an A/B showed 5/5 both ways | Drift, not a code fault |
 | `route-followup-finance-advice` | 0/3 to 3/3 | Varies with run state on byte-identical requests | Drift, not a code fault |
 
