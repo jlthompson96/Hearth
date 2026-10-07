@@ -74,6 +74,21 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # tests/test_restore.py dumps and restores with the real programs, and
+      # they must match the server's major version. The runner's own client is
+      # older, so 17 comes from PostgreSQL's apt repository; PGBIN points the
+      # scripts at it.
+      - name: PostgreSQL 17 client, for the dump-and-restore round trip
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-client-17
+          echo "PGBIN=/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
+
       - name: Lint — ruff, mypy, tsc
         run: make PYTHON=python lint
 

@@ -15,10 +15,17 @@ Two rules it follows, for the same reasons the rest of the app does:
   database in one file, and the one place it must never be is a directory that
   gets committed.
 
-Restoring, when the day comes:
+Each dump is read back with `pg_restore --list` before it counts. A dump that
+cannot be listed cannot be restored, and is deleted rather than kept as a
+backup that is not one.
 
-    createdb -U <user> hearth
-    pg_restore -U <user> -d hearth --clean --if-exists <the .dump file>
+Restoring, when the day comes — onto this machine or a new one:
+
+    make restore DUMP=<the .dump file>
+
+`scripts/restore.py` does it in the order that works on a new cluster, where
+the read-only role the tools connect as does not exist yet: `pg_dump` carries
+no roles.
 """
 
 import datetime as dt
@@ -29,6 +36,8 @@ import sys
 from pathlib import Path
 
 from sqlalchemy.engine import make_url
+
+from ingest.datadir import inside_repository
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -48,7 +57,7 @@ def destination() -> Path:
     """Where dumps are written. Never inside the repository."""
     chosen = Path(os.environ.get("HEARTH_BACKUP_DIR") or DEFAULT_DIR).expanduser()
     resolved = chosen.resolve() if chosen.is_absolute() else (REPO / chosen).resolve()
-    if resolved == REPO or REPO in resolved.parents:
+    if inside_repository(resolved):
         raise BackupError(
             f"{resolved} is inside the repository. A dump is the whole database in one "
             "file; put it somewhere that is never committed (HEARTH_BACKUP_DIR)."
@@ -56,20 +65,43 @@ def destination() -> Path:
     return resolved
 
 
-def pg_dump() -> Path:
-    """`pg_dump` from `PGBIN` if it is set, else from PATH."""
+def binary(name: str) -> Path:
+    """A PostgreSQL program from `PGBIN` if it is set, else from PATH."""
     binaries = os.environ.get("PGBIN")
     if binaries:
-        candidate = Path(binaries) / ("pg_dump.exe" if os.name == "nt" else "pg_dump")
+        candidate = Path(binaries) / (f"{name}.exe" if os.name == "nt" else name)
         if candidate.exists():
             return candidate
-    found = shutil.which("pg_dump")
+    found = shutil.which(name)
     if found:
         return Path(found)
     raise BackupError(
-        "pg_dump was not found. Set PGBIN in .env to the folder holding the "
+        f"{name} was not found. Set PGBIN in .env to the folder holding the "
         "PostgreSQL binaries, or put them on PATH."
     )
+
+
+def pg_dump() -> Path:
+    return binary("pg_dump")
+
+
+def pg_restore() -> Path:
+    return binary("pg_restore")
+
+
+def verify(dump: Path) -> None:
+    """The dump can be read back: `pg_restore --list` reads its table of
+    contents, which is the first thing a restore does. One that cannot be read
+    is deleted, so no file is left looking like a backup."""
+    listed = subprocess.run(
+        [str(pg_restore()), "--list", str(dump)], capture_output=True, text=True
+    )
+    if listed.returncode != 0:
+        dump.unlink(missing_ok=True)
+        raise BackupError(
+            f"the dump could not be read back, and was deleted: "
+            f"{listed.stderr.strip().splitlines()[-1:]}"
+        )
 
 
 def command(url: str, into: Path) -> tuple[list[str], dict[str, str]]:
@@ -115,7 +147,10 @@ def run(now: dt.datetime | None = None) -> Path:
     if finished.returncode != 0:
         # pg_dump's own message, which names the database and never a row.
         raise BackupError(f"pg_dump failed: {finished.stderr.strip().splitlines()[-1:]}")
-    prune(folder)
+    verify(into)
+    # Only once the new dump is known to be readable: pruning first could leave
+    # fewer good backups than KEEP.
+    prune(folder, keep=KEEP)
     return into
 
 
@@ -125,5 +160,5 @@ if __name__ == "__main__":
     except BackupError as problem:
         print(problem, file=sys.stderr)
         raise SystemExit(1) from problem
-    print(f"backed up to {written} ({written.stat().st_size / 2**20:.1f} MiB)")
-    print(f"keeping the newest {KEEP}; restore with pg_restore --clean --if-exists")
+    print(f"backed up to {written} ({written.stat().st_size / 2**20:.1f} MiB), read back whole")
+    print(f"keeping the newest {KEEP}; restore with make restore DUMP=<file>")

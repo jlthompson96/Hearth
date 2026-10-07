@@ -28,6 +28,14 @@ class ExportFile:
     sha256: str
 
 
+def inside_repository(path: Path) -> bool:
+    """Whether `path` is this repository or anywhere under it. Real exports,
+    dumps and data exports are each refused there: the repository is the one
+    place that gets committed."""
+    resolved = path.resolve()
+    return resolved == REPO or REPO in resolved.parents
+
+
 def data_dir() -> Path:
     configured = get_settings().hearth_data_dir
     # An empty `HEARTH_DATA_DIR=` in .env arrives as Path("."), not None.
@@ -43,7 +51,7 @@ def data_dir() -> Path:
         )
 
     folder = configured.resolve()
-    if folder == REPO or REPO in folder.parents:
+    if inside_repository(folder):
         raise DataDirProblem(
             "HEARTH_DATA_DIR is inside this repository. Real exports never enter the "
             "workspace — point it at a folder outside it."

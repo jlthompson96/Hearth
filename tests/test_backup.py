@@ -65,11 +65,13 @@ def test_each_dump_is_named_for_when_it_was_taken(
 ) -> None:
     monkeypatch.setenv("HEARTH_BACKUP_DIR", str(tmp_path))
     monkeypatch.setattr(backup, "pg_dump", lambda: Path("pg_dump"))
+    monkeypatch.setattr(backup, "pg_restore", lambda: Path("pg_restore"))
     seen: dict[str, object] = {}
 
     def _ran(arguments: list[str], **kwargs: object) -> object:
-        seen["file"] = [a for a in arguments if a.startswith("--file=")][0]
-        (tmp_path / "hearth-20260922-201500.dump").write_text("dump", encoding="utf-8")
+        if arguments[0] == "pg_dump":
+            seen["file"] = [a for a in arguments if a.startswith("--file=")][0]
+            (tmp_path / "hearth-20260922-201500.dump").write_text("dump", encoding="utf-8")
         return type("Finished", (), {"returncode": 0, "stderr": ""})()
 
     monkeypatch.setattr(subprocess, "run", _ran)
@@ -93,3 +95,56 @@ def test_a_failed_dump_says_so_without_inventing_a_backup(
 
     with pytest.raises(backup.BackupError, match="pg_dump failed"):
         backup.run()
+
+
+def _finished(returncode: int, stderr: str = "") -> object:
+    return type("Finished", (), {"returncode": returncode, "stderr": stderr})()
+
+
+def test_every_dump_is_read_back_before_it_counts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A dump that cannot be listed cannot be restored."""
+    monkeypatch.setenv("HEARTH_BACKUP_DIR", str(tmp_path))
+    monkeypatch.setattr(backup, "pg_dump", lambda: Path("pg_dump"))
+    monkeypatch.setattr(backup, "pg_restore", lambda: Path("pg_restore"))
+    ran: list[list[str]] = []
+
+    def _ran(arguments: list[str], **kwargs: object) -> object:
+        ran.append(arguments)
+        return _finished(0)
+
+    monkeypatch.setattr(subprocess, "run", _ran)
+
+    written = backup.run(now=dt.datetime(2026, 10, 7, 9, 0, 0))
+
+    assert [a[0] for a in ran] == ["pg_dump", "pg_restore"]
+    assert ran[1] == ["pg_restore", "--list", str(written)]
+
+
+def test_a_dump_that_cannot_be_read_back_is_deleted_and_nothing_is_pruned(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No file is left looking like a backup that is not one, and the older
+    good ones are not pruned to make room for it."""
+    monkeypatch.setenv("HEARTH_BACKUP_DIR", str(tmp_path))
+    monkeypatch.setattr(backup, "pg_dump", lambda: Path("pg_dump"))
+    monkeypatch.setattr(backup, "pg_restore", lambda: Path("pg_restore"))
+    for day in range(1, 4):
+        (tmp_path / f"hearth-2026090{day}-120000.dump").write_text("x", encoding="utf-8")
+    broken = tmp_path / "hearth-20261007-090000.dump"
+
+    def _ran(arguments: list[str], **kwargs: object) -> object:
+        if arguments[0] == "pg_dump":
+            broken.write_text("truncated", encoding="utf-8")
+            return _finished(0)
+        return _finished(1, "pg_restore: error: could not read input file")
+
+    monkeypatch.setattr(subprocess, "run", _ran)
+    monkeypatch.setattr(backup, "KEEP", 2)
+
+    with pytest.raises(backup.BackupError, match="could not be read back"):
+        backup.run(now=dt.datetime(2026, 10, 7, 9, 0, 0))
+
+    assert not broken.exists()
+    assert len(list(tmp_path.glob("hearth-*.dump"))) == 3
