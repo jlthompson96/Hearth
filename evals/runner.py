@@ -22,7 +22,7 @@ import yaml
 
 from agents import forge, preflight, tally
 from agents.conversation import Exchange, previous, window
-from agents.grounding import ungrounded, unitless
+from agents.grounding import ungrounded
 from agents.loop import (
     Detail,
     Event,
@@ -84,10 +84,6 @@ class Result:
     #: Mean wall-clock seconds per run. A pass rate says whether an answer is
     #: right; this says whether anyone would wait for it.
     seconds: float = 0.0
-    #: What a run noticed without failing on it: figures written without their
-    #: sign that the grounding check does not yet flag (`grounding.unitless`),
-    #: recorded so a run can show what enforcing it would catch.
-    notes: list[str] = field(default_factory=list)
 
     @property
     def rate(self) -> float:
@@ -169,8 +165,8 @@ def _text_and_tools(
     return "".join(text), tools, signal, results, answered_by
 
 
-def run_once(case: Case, today: dt.date, notes: list[str] | None = None) -> tuple[bool, str]:
-    """(passed, why not). What it noticed without failing goes in `notes`."""
+def run_once(case: Case, today: dt.date) -> tuple[bool, str]:
+    """(passed, why not)."""
     if case.kind == "routing":
         router = ConstrainedJSONRouter(with_errand=case.with_errand)
         routed = router.route(case.question, previous(case.history))
@@ -206,20 +202,15 @@ def run_once(case: Case, today: dt.date, notes: list[str] | None = None) -> tupl
         return False, f"said {forbidden} — that is no-data reported as no-change: {text[:160]!r}"
 
     # Rule 1: the right figure being present is not enough if a wrong one is
-    # present beside it. The same check the chat runs on every real answer.
-    # Earlier turns count through their questions and tool results, as in the
-    # chat route — never through their answers.
+    # present beside it. The same check the chat runs on every real answer,
+    # strict since Phase B of the grounding-unitless review: a figure written
+    # without its sign ("38 thousand") is flagged like any other. Earlier
+    # turns count through their questions and tool results, as in the chat
+    # route — never through their answers.
     shown = window(case.history, answered_by) if answered_by else []
     sources = [*results, *(r for e in shown for r in e.results)]
     asked = [case.question, *(e.question for e in shown)]
-    # Report-only: figures written without their sign, which the check does not
-    # flag yet. Noted before the verdict, so a failing run reports them too.
-    would = unitless(text, sources, asked)
-    if would and notes is not None:
-        note = f"would flag without a sign: {would}"
-        if note not in notes:
-            notes.append(note)
-    flags = ungrounded(text, sources, asked)
+    flags = ungrounded(text, sources, asked, strict=True)
     if flags:
         return False, f"figures no tool returned: {flags} in: {text[:160]!r}"
 
@@ -233,11 +224,10 @@ def run(case: Case, today: dt.date, runs: int) -> Result:
     and refusal cases alone and read as a clean pass."""
     passed = 0
     detail: list[str] = []
-    notes: list[str] = []
     started = time.perf_counter()
     for _ in range(runs):
         try:
-            ok, why = run_once(case, today, notes)
+            ok, why = run_once(case, today)
         except Exception as error:  # noqa: BLE001 - a crash is a failed run, recorded as one
             ok, why = False, f"raised {type(error).__name__}: {error}"
         passed += ok
@@ -247,7 +237,7 @@ def run(case: Case, today: dt.date, runs: int) -> Result:
 
     required = "all runs" if case.all_runs else "majority"
     ok = passed == runs if case.all_runs else passed > runs // 2
-    return Result(case.id, case.kind, runs, passed, required, ok, detail, seconds, notes)
+    return Result(case.id, case.kind, runs, passed, required, ok, detail, seconds)
 
 
 # --- recording ----------------------------------------------------------------

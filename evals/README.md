@@ -41,10 +41,10 @@ right figure being present is not enough if a computed one sits beside it.
 
 That check knows a figure by its sign — `$`, a weight unit, `%`. Figures written
 without one ("38,250 dollars", "about 38 thousand", a bare "38,250") are found by
-`grounding.unitless` and, since 2026-10-07, **reported, not failed**: each case's
-`notes` in the result file lists what it would have flagged. Once a full run's notes
-show no false positives, `strict=True` turns them into failures, in the evals and in
-the chat alike — and that change is measured like any other.
+`grounding.unitless`. A 2026-10-07 run reported them without failing on them
+(`strict=False`) and found none; with that measurement showing no false positives,
+`strict=True` is on in both the evals and the chat — such a figure fails a case like
+any other ungrounded one.
 
 `must_not_contain` exists for the failure that is worse than a wrong number —
 `caveat-no-data-is-not-no-change` asserts the answer does *not* say "unchanged"

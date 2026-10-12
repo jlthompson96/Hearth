@@ -260,6 +260,7 @@ def _turn(
             content,
             [*results, *(r for e in shown for r in e.results)],
             [request.message, *(e.question for e in shown)],
+            strict=True,
         )
     )
     if flags:
