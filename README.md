@@ -207,7 +207,8 @@ text is not in this table, because it is not implemented.
 | **A turn runs at the window its budgets assume** | `model_choice.window_problem()`, before routing and again in the agent loop, believed for a minute: the chat model must be loaded at 8,192 tokens. One not loaded is loaded at that length; one loaded only at another length refuses the turn with a pointer to the Settings reload, rather than unloading an instance behind anyone's back. A step that fills 90% of the window says so in the Model log. A stored model choice LM Studio no longer lists falls back to `.env`'s at startup | `tests/test_context_window.py` |
 | **No setting loosens a guardrail** | `preferences.py`: three preferences, each a fixed list of values — answer length and two retention periods. The hop cap, step cap, follow-up window, pre-flight check and read-only role are shown on the Settings screen locked, and `.env` is never written from a page | `tests/test_preferences.py` |
 | **Real data stays out of the repo** | `HEARTH_DATA_DIR` inside the repository is refused; the evals run on their own fixture database, so no real figure reaches a committed result file | `tests/test_datadir.py`, `evals/conftest.py` |
-| **Only this machine's own pages can read the API** | `api/hosts.py`: a request whose Host header does not name this machine — `localhost`, `127.0.0.1` or `::1` — is refused before any route runs. Listening on 127.0.0.1 keeps other machines out but not other web pages: one that re-points its own domain at 127.0.0.1 (DNS rebinding) could otherwise read the thread history and the Model log as its own origin | `tests/test_hosts.py` |
+| **Only this machine's own pages can read the API** | `api/hosts.py`: a request whose Host header does not name this machine — `localhost`, `127.0.0.1` or `::1` — or a name listed in `HEARTH_ALLOWED_HOSTS` is refused before any route runs. Listening on 127.0.0.1 keeps other machines out but not other web pages: one that re-points its own domain at 127.0.0.1 (DNS rebinding) could otherwise read the thread history and the Model log as its own origin | `tests/test_hosts.py`, `tests/test_auth.py` |
+| **Nothing on the network without a password** | `config.py` refuses to start with `HEARTH_ALLOWED_HOSTS` set and no `HEARTH_PASSWORD_HASH`. With one set, `api/auth.py` refuses every `/api` route, and the API description, without a signed session cookie (`HttpOnly`, `SameSite=Strict`, `Secure`). Guessing is throttled. The host is checked first, so a rebinding page learns nothing | `tests/test_auth.py`: every route, read from the app's own schema. 30 tests fail with the gate removed |
 
 Rules 8–11 govern MCP, which arrives in Phase 12; no MCP code exists yet.
 
@@ -260,7 +261,8 @@ Backlog, unscheduled: a morning digest, and CSV and chart export.
   (winget does not add it to its Links directory, so add its `bin` to PATH by hand).
 - Node 20.19+ or 22.12+ (Vite 7's floor)
 - Docker with Compose v2 — **or** a native Postgres 17, see
-  [Postgres without Docker](#postgres-without-docker)
+  [Postgres without Docker](#postgres-without-docker) — **or** a Synology NAS running
+  Hearth itself, see [Running Hearth on the NAS](#running-hearth-on-the-nas)
 - [LM Studio](https://lmstudio.ai) serving an OpenAI-compatible endpoint on
   `http://localhost:1234/v1`
 
@@ -342,6 +344,163 @@ Two things you do not get, both deliberate rather than overlooked:
   native SearXNG.
 
 A native cluster is not a service and does not survive a reboot. `make up` starts it.
+
+## Running Hearth on the NAS
+
+On the owner's setup, the desktop runs **LM Studio and nothing else**. Everything that
+holds or serves data runs on a Synology DS423+ from `docker-compose.nas.yml`:
+
+| Service | What it is | Reachable from |
+|---|---|---|
+| `hearth` | The backend, serving the built UI (`Dockerfile`) | The NAS's loopback only. DSM's reverse proxy puts HTTPS in front of it |
+| `postgres` | `pgvector/pgvector:pg17`, so pgvector comes with it | The desktop and the `hearth` container, by address (`pg_hba.conf`) |
+| `searxng` | Errand's search engine | The `hearth` container only. No port on the LAN |
+
+This also clears the two gaps above: the NAS has the Docker the desktop lacks, and the
+image ships pgvector. Every address Hearth calls is still on the LAN, and
+`config.local_only()` checks that at startup. Searches still pass
+`validate_search_query()` and are audited before any request reaches SearXNG.
+
+**What is never done:** pointing a cluster at a NAS share over SMB or NFS. Postgres
+depends on fsync and locking behaviour that network filesystems don't reliably provide,
+and the failure is silent corruption. The NAS runs Postgres itself.
+
+### The password
+
+Hearth was built to answer one machine, and on the NAS it answers every device at home.
+So it asks for a password (`api/auth.py`):
+- **Storage.** The password is kept as a scrypt hash in `.env`, never in plain text.
+- **Sessions.** A session is a signed cookie lasting 30 days. It is `HttpOnly` (no script
+  can read it), `SameSite=Strict` (no other site can send it) and `Secure` (HTTPS only).
+- **Guessing.** After five wrong passwords in fifteen minutes, every attempt is refused
+  until the window passes, the right password included.
+- **Changing it.** `make password` again, then restart the container. Every device is
+  signed out.
+
+**Hearth will not start answering other machines without a password.** Setting
+`HEARTH_ALLOWED_HOSTS` without `HEARTH_PASSWORD_HASH` is a startup error (rule 7).
+`tests/test_auth.py` builds its list of routes from the app's own OpenAPI schema and
+proves that every `/api` route refuses a request without a session. It was shown to fail,
+30 tests, with the gate removed.
+
+```bash
+make password            # asks twice; prints HEARTH_PASSWORD_HASH=scrypt:… for the NAS .env
+```
+
+### On the NAS
+
+1. **Folders.** Create a shared folder on a Btrfs volume, e.g. `/volume1/hearth`. If there
+   is an M.2 NVMe storage pool, put the database folder on it. Inside it, create:
+   - `pgdata/`, empty, for the database
+   - `data/`, where Fidelity and weight exports go. Hearth only ever reads it.
+   - `backups/` and `exports/`
+   - a copy of this repository. Keep `docker/postgres/initdb-nas/02-restrict-hba.sh`
+     executable.
+2. **The project's `.env`,** beside `docker-compose.nas.yml`. Use hex passwords
+   (`openssl rand -hex 24`), because they go inside URLs.
+
+   ```bash
+   POSTGRES_USER=hearth
+   POSTGRES_PASSWORD=<hex>
+   POSTGRES_DB=hearth
+   HEARTH_RO_PASSWORD=<hex>              # the read-only role the tools connect as
+   SEARXNG_SECRET=<openssl rand -hex 32>
+   SEARCH_BLOCKED_TERMS=<surname, street, employer>
+
+   LM_STUDIO_BASE_URL=http://<desktop address>:1234/v1
+   CHAT_MODEL=<id LM Studio reports>
+   EMBEDDING_MODEL=<id LM Studio reports>
+
+   HEARTH_ALLOWED_HOSTS=<the name the reverse proxy serves, e.g. hearth.local>
+   HEARTH_PASSWORD_HASH=<from make password>
+
+   NAS_BIND_IP=<NAS address>             # Postgres's port, for the desktop
+   HEARTH_CLIENT_IPS=<desktop address>   # the one LAN machine Postgres admits
+   NAS_PGDATA_DIR=/volume1/hearth/pgdata
+   NAS_DATA_DIR=/volume1/hearth/data
+   NAS_BACKUP_DIR=/volume1/hearth/backups
+   NAS_EXPORT_DIR=/volume1/hearth/exports
+   ```
+
+3. **Create the project.** Container Manager → Project → Create, from that folder. It
+   builds the image (the UI is built inside it), starts Postgres, and Hearth applies
+   migrations before it serves anything.
+4. **HTTPS.** Control Panel → Login Portal → Advanced → Reverse Proxy: from
+   `https://<HEARTH_ALLOWED_HOSTS name>:443` to `http://localhost:8000`. Use a certificate
+   from Control Panel → Security → Certificate; a self-signed one needs installing as
+   trusted on each device. The cookie is HTTPS-only, so signing in over plain HTTP does
+   nothing. That is deliberate.
+5. **Firewall.** Control Panel → Security → Firewall: allow Postgres's port from the
+   desktop only.
+6. **DSM settings.** Turn off QuickConnect, and turn off device analytics under Control
+   Panel → Info Center if it is on. Keep the `hearth` folder out of Cloud Sync and any
+   other cloud task. Rules 5 and 6 also cover where the data lives.
+
+### On the desktop
+
+- **LM Studio.** Developer → Server settings → **Serve on Local Network**.
+- **Windows Firewall.** Create an inbound rule allowing TCP 1234 from the NAS's address
+  only. LM Studio has no login of its own.
+- **Give the desktop a DHCP reservation in the router.** Postgres and the firewall rules
+  above name its address.
+- **The repository stays here** for development and measurement. Its `.env` points at the
+  NAS, and `make eval`, `make backup` and `make test` run from here against it:
+
+  ```bash
+  INFRA_HOST=nas.local          # make up/down/logs then start nothing here
+  DATABASE_URL=postgresql+psycopg://hearth:<password>@<NAS address>:5432/hearth
+  DATABASE_URL_RO=postgresql+psycopg://hearth_ro:<password>@<NAS address>:5432/hearth
+  ```
+
+### Who may connect to Postgres
+
+The compose file sets `POSTGRES_HOST_AUTH_METHOD=reject`, so a new cluster refuses every
+TCP connection. On first start, `02-restrict-hba.sh` puts password-checked lines ahead of
+that rule for two addresses: the desktop (`HEARTH_CLIENT_IPS`) and the `hearth`
+container (`172.30.42.10`, fixed in the compose file).
+
+Both choices were forced by measurement, not taste:
+- **Closed by default.** An init script that cannot run does not stop the image's
+  entrypoint. Before this change, a script blocked by a file-mode quirk left a cluster that
+  accepted any address with a password. The same failure now leaves one that accepts no
+  one, and the log says why.
+- **One address, not the subnet.** Admitting the project's subnet also admitted its
+  gateway, and Docker Desktop delivered a published-port connection from an unlisted
+  machine *as the gateway*. It got in. Admitting the container's single address shut it
+  out.
+
+Linux Docker normally keeps the real source address. If Synology's doesn't, the desktop
+is refused with `pg_hba.conf rejects connection for host "<address>"`, naming the
+address it saw. Adding that address admits whatever reaches the port, and the firewall
+rule becomes what restricts it. The script runs on an empty data folder only. To change
+the list later, edit `pg_hba.conf` in `NAS_PGDATA_DIR` and restart the container.
+
+What still crosses the LAN unencrypted: Hearth's calls to LM Studio, which carry prompts
+and tool results, balances included, and the desktop's connections to Postgres.
+scram-sha-256 keeps the database password itself off the wire.
+
+### Moving the data over
+
+From the native cluster on the desktop:
+
+```bash
+make backup                                   # still pointed at the native cluster
+# switch the desktop's .env to the NAS as above, then:
+make restore DUMP=<that .dump file>           # creates the read-only role too
+make test
+```
+
+Then check the account totals on the Data & imports screen against Fidelity's, as after
+the first import. Move the exports themselves into the NAS's `data/` folder.
+
+### Backups
+
+`docker exec hearth-hearth-1 python -m scripts.backup` writes to the NAS's `backups/`
+folder. Schedule it in DSM's Task Scheduler. A dump on the same NAS as the database is
+not a backup of it, so use Hyper Backup to take an encrypted copy somewhere else, or run
+`make backup` from the desktop as well, which keeps its own copies there. Btrfs snapshots
+of `hearth` are cheap, but a snapshot of a running cluster is only crash-consistent, so the
+dumps remain the backup.
 
 ## What the tools do
 

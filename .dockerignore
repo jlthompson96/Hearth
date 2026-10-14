@@ -1,0 +1,22 @@
+# The image is built from this directory. Nothing private goes into it: .env is
+# passed to the container at run time by the NAS project, and real data is
+# mounted read-only from a NAS share, never copied in.
+.env
+.env.*
+!.env.example
+data/
+.git/
+.githooks/
+.venv/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+web/node_modules/
+web/dist/
+tests/
+evals/
+docs/
+*.md
+!web/src/api/README.md
+.DS_Store

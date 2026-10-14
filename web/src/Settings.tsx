@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { reason } from './api/http'
+import { session, SIGNED_OUT } from './api/session'
 import { settings, type Models, type Preference, type Settings as SettingsData } from './api/settings'
 import { showToast } from './toast'
 
@@ -346,6 +347,39 @@ export function Settings({ active }: { active: boolean }) {
           <Lock /> Enforced in code. Shown here so you can see it; there is no switch for it.
         </p>
       )}
+      <SignOut />
+    </section>
+  )
+}
+
+/** Shown only when the backend asks for a password. Signing out ends this
+ * device's session; the shell then shows the sign-in screen. Changing the
+ * password (`make password`) is what signs every device out. */
+function SignOut() {
+  const [required, setRequired] = useState(false)
+
+  useEffect(() => {
+    session
+      .read()
+      .then((s) => setRequired(s.required))
+      .catch(() => setRequired(false))
+  }, [])
+
+  if (!required) return null
+  return (
+    <section className="group">
+      <h3>This device</h3>
+      <button
+        type="button"
+        onClick={() =>
+          void session
+            .signOut()
+            .then(() => window.dispatchEvent(new Event(SIGNED_OUT)))
+            .catch((error: unknown) => showToast(reason(error), 'error'))
+        }
+      >
+        Sign out
+      </button>
     </section>
   )
 }

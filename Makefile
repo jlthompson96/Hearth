@@ -22,7 +22,7 @@ export
 
 API_PORT ?= 8000
 
-.PHONY: dev migrate seed unseed test eval lint fmt install up down logs backup restore grant-ro export load-export start freeze clean hooks
+.PHONY: dev migrate seed unseed test eval lint fmt install up down logs backup restore grant-ro export load-export start freeze clean hooks password
 
 ## dev — docker compose up + backend + frontend
 dev: install up
@@ -97,8 +97,11 @@ web/node_modules: web/package.json
 	cd web && npm install
 	touch web/node_modules
 
-# Two ways to get a Postgres. Setting PGDATA in .env selects a native cluster
-# driven by pg_ctl; leaving it unset keeps docker compose. The GPU host has no
+# Three ways to get a Postgres. Setting INFRA_HOST in .env says Postgres and
+# SearXNG run on another machine on the LAN — the NAS, under
+# docker-compose.nas.yml — and are started there, not from here. Setting PGDATA
+# selects a native cluster driven by pg_ctl; leaving both unset keeps docker
+# compose. The GPU host has no
 # working Docker — its WSL2 backend needs a Windows feature that is off, and the
 # WSL2 route is ruled out anyway — so it runs native. The Mac runs compose.
 #
@@ -114,7 +117,9 @@ web/node_modules: web/package.json
 
 ## up — infrastructure only; waits for Postgres to accept connections
 up:
-ifdef PGDATA
+ifdef INFRA_HOST
+	@echo "Postgres and SearXNG run on $(INFRA_HOST) — start them in Container Manager there."
+else ifdef PGDATA
 	@"$(PGBIN)/pg_ctl" -D "$(PGDATA)" status >/dev/null 2>&1 || powershell -NoProfile -Command \
 		"Start-Process -FilePath '$(PGBIN)/pg_ctl.exe' -WindowStyle Hidden -ArgumentList \
 		 '-D','$(PGDATA)','-l','$(PGDATA)/server.log','start'"
@@ -125,14 +130,18 @@ else
 endif
 
 down:
-ifdef PGDATA
+ifdef INFRA_HOST
+	@echo "Postgres and SearXNG run on $(INFRA_HOST) — stop them in Container Manager there."
+else ifdef PGDATA
 	@"$(PGBIN)/pg_ctl" -D "$(PGDATA)" -m fast stop </dev/null || true
 else
 	docker compose down
 endif
 
 logs:
-ifdef PGDATA
+ifdef INFRA_HOST
+	@echo "Postgres and SearXNG run on $(INFRA_HOST) — their logs are in Container Manager there."
+else ifdef PGDATA
 	@tail -f "$(PGDATA)/server.log"
 else
 	docker compose logs -f
@@ -146,6 +155,10 @@ backup: install
 restore: install
 	@test -n "$(DUMP)" || { echo "Name the dump: make restore DUMP=<file> [DB=<name>]"; exit 1; }
 	$(PY) -m scripts.restore "$(DUMP)" $(if $(DB),--database "$(DB)")
+
+## password — set the owner's password; prints the line for .env (api/auth.py)
+password: install
+	$(PY) -m scripts.password
 
 ## grant-ro — create or repair the read-only role named in DATABASE_URL_RO
 grant-ro: install

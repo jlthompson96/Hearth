@@ -607,6 +607,76 @@ Not yet measured: the host had no LM Studio running and no `.env` or Postgres in
 checkout, so a development cluster was made for the tests and **no eval was run**. Three
 branches need one before they merge, the first of them the fix to `main`.
 
+## Storage and hosting: Hearth moves to the NAS (2026-10-14)
+
+Three options were weighed for storage: the local Postgres, the Synology NAS (a DS423+),
+or a Notion database through its API. **Notion was ruled out**:
+- It breaks rules 3 and 5: balances would live on Notion's servers, and every question
+  would be an outbound call.
+- Its numbers are floats, and the evals fail a cent's difference.
+- It has no transactions, so the importer's all-or-nothing guarantee would go.
+- It has no read-only role, no full-text search and no vectors.
+
+**The NAS as a file share under Postgres was ruled out too.** A cluster whose data folder
+is on SMB or NFS can corrupt silently.
+
+**What was chosen, in two steps the same day.** First, the NAS *runs* Postgres and
+SearXNG, which answers open questions 2 and 3, because the desktop's missing Docker was
+the block on both. Then, at the owner's choice, Hearth itself moved there as well. **The
+desktop runs LM Studio and nothing else.** Hearth on the NAS calls it across the LAN,
+which rule 5 allows. The owner wanted to reach it from **any device at home, behind one
+password**.
+
+That made the password the first thing built, before any packaging. Hearth had been
+safe on the strength of answering localhost alone (`api/hosts.py`), and on the NAS that
+no longer holds. `api/auth.py`:
+- The password is a scrypt hash, and a session is a signed cookie (`HttpOnly`,
+  `SameSite=Strict`, `Secure`).
+- Guessing is throttled.
+- `config.py` refuses to start with `HEARTH_ALLOWED_HOSTS` set and no password.
+- `tests/test_auth.py` reads every route from the app's own schema and proves each one
+  refuses without a session. With the gate removed, 30 of its tests failed.
+- The hash's separator is `:`, not the usual `$`: the Makefile includes `.env`, and make
+  would have expanded `$3` inside it.
+
+Then the container: one image runs the backend and serves the built UI from the same
+origin, applies migrations before serving, and carries `pg_dump` 17. Hearth is published
+on the NAS's loopback only, so DSM's HTTPS reverse proxy is the one way in. SearXNG has no
+LAN port at all, because only Hearth calls it.
+
+**Who may connect to Postgres was decided by measurement, twice.**
+- *Closed by default.* The first version narrowed `pg_hba.conf` with an init script. That
+  script failed on a file-mode quirk (`bad interpreter: Permission denied`), the image's
+  entrypoint carried on regardless, and the cluster accepted a password from any address.
+  The compose file now sets `POSTGRES_HOST_AUTH_METHOD=reject`, and the script only adds
+  allow lines ahead of it. A script that cannot run now leaves a cluster nobody can
+  reach.
+- *One address, not a subnet.* Admitting the project's subnet, so the Hearth container
+  could connect, also admitted its gateway. Docker Desktop delivered an unlisted
+  machine's connection as the gateway, and it got in. The container now has a fixed
+  address, `172.30.42.10`, and only that is admitted. The unlisted machine was then
+  refused.
+
+**Measured on the Mac under Docker:**
+- `make test`'s suite passed against the NAS compose file's Postgres: 849 tests,
+  including the read-only role and the importer's savepoint.
+- The full stack built and started, migrated, and served the UI. It refused every API
+  route without a session and answered with one. It reached SearXNG by name, and wrote a
+  backup to its mounted folder.
+- The two restore round trips need `pg_dump` on the test machine and were not run here.
+
+**Not yet done, and only the owner's hardware can do it:**
+- Running it on the DS423+.
+- Seeing whether Synology's Docker keeps the desktop's address on incoming connections.
+  If it doesn't, the refusal names the address it saw, and the firewall rule becomes the
+  restriction (README).
+- LM Studio serving on the LAN, behind a Windows Firewall rule.
+- The move itself, by `make backup` → `make restore`, with the Fidelity totals checked.
+- An eval run with the model reached across the LAN.
+
+What crosses the LAN in the clear is named in the README: prompts to LM Studio, and the
+desktop's Postgres connections.
+
 ## Cut deliberately
 
 Voice (no VRAM), a third agent (more tools beat more agents at this size), proactive
@@ -618,13 +688,14 @@ transaction-level ingestion (drags in merchant categorization).
 1. Fitness data: **answered 2026-09-25 — both, in pounds.** Manual entry is built, and the
    body-weight history importer; its first real import is the test of what the screenshot
    could not show.
-2. SearXNG without Docker — blocks Phase 9, and Langfuse with it. See the Postgres answer below: that machine
-   has no working Docker, and SearXNG is a compose service. Either Docker gets fixed or
-   SearXNG runs natively.
-3. pgvector on the host — blocks Phase 10 alongside nothing else now that the embedding
-   model is chosen. It needs an MSVC build on Windows. Nothing earlier touches a vector
-   column, so it can wait, but Phase 10 must install it and assert it rather than
-   inheriting the test harness's warning.
+2. SearXNG without Docker — blocks Phase 9, and Langfuse with it. **Path chosen
+   2026-10-14: it runs on the NAS** (see "Storage and hosting" above). Open until it answers there.
+   Langfuse stays out regardless: four more services on a NAS for one user is the cost
+   that kept it out at the start.
+3. pgvector on the host — blocks Phase 10. **Path chosen 2026-10-14: Postgres runs on the
+   NAS from the `pgvector/pgvector:pg17` image**, so no MSVC build is needed. Open until
+   the move is made. Phase 10 must still assert the extension is there rather than
+   inherit the test harness's warning.
 
 **Answered (2026-09-21):** where the pre-flight check runs — before routing, on every
 question, and again in each specialist. The patterns were tightened first, so it no longer

@@ -9,6 +9,7 @@
  * Frames are separated by a blank line and can be split across network chunks,
  * so the buffer is only consumed up to the last complete separator.
  */
+import { SIGNED_OUT, signedOut } from './http'
 import type { components } from './schema'
 
 export type ChatRequest = components['schemas']['ChatRequest']
@@ -114,6 +115,9 @@ export async function* streamChat(
   })
 
   if (!response.ok || !response.body) {
+    if (response.status === 401 && signedOut(await response.json().catch(() => null))) {
+      window.dispatchEvent(new Event(SIGNED_OUT))
+    }
     yield { type: 'error', detail: `/api/chat returned ${response.status}` }
     return
   }

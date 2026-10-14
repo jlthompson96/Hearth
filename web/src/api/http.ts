@@ -32,6 +32,17 @@ function refusal(url: string, status: number, payload: unknown): Refusal {
   return new Refusal('error', `${url} returned ${status}`)
 }
 
+/** Announced on `window` when a request is refused for want of a session, so
+ * the shell shows the sign-in screen wherever the refusal happened. */
+export const SIGNED_OUT = 'hearth:signed-out'
+
+/** The gate's refusal (api/auth.py), as opposed to a wrong password. */
+export function signedOut(payload: unknown): boolean {
+  return (
+    !!payload && typeof payload === 'object' && (payload as { kind?: unknown }).kind === 'signed_out'
+  )
+}
+
 export async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
   const response = await fetch(url, {
     method,
@@ -40,6 +51,9 @@ export async function call<T>(method: string, url: string, body?: unknown): Prom
   })
   if (response.status === 204) return undefined as T
   const payload: unknown = await response.json().catch(() => null)
+  if (response.status === 401 && signedOut(payload)) {
+    window.dispatchEvent(new Event(SIGNED_OUT))
+  }
   if (!response.ok) throw refusal(url, response.status, payload)
   return payload as T
 }

@@ -1861,3 +1861,19 @@ kbd {
 
   .toasts { bottom: 1rem; width: calc(100vw - 2rem); }
 }
+
+/* Sign-in (api/auth.py): the one screen shown before there is a session. */
+.signin {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 0 1rem;
+  background: var(--bg);
+}
+
+.signin .card {
+  width: min(22rem, 100%);
+  padding: 1.5rem;
+}
+
+.signin button { align-self: flex-start; }

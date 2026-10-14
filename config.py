@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # hide_input_in_errors: a rejected DATABASE_URL would otherwise be printed in
@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     database_url: str = Field(min_length=1)
     database_url_ro: str = Field(min_length=1)
 
-    # Errand's door. Localhost only — anything else violates rule 5.
+    # Errand's door. This machine or the LAN — anything else violates rule 5.
     searxng_url: str = "http://localhost:8080"
     # Words no search may contain, comma-separated: a surname, a street, an
     # employer. Matched as whole words, case ignored. Account labels are not
@@ -81,17 +81,49 @@ class Settings(BaseSettings):
     # Real CSVs live outside the repo. Unset until Phase 2 needs it.
     hearth_data_dir: Path | None = None
 
+    # Names the API answers to beyond this machine's own, comma-separated — the
+    # NAS's name and address when Hearth is served there. Empty, it answers to
+    # localhost alone (api/hosts.py).
+    hearth_allowed_hosts: Annotated[list[str], NoDecode] = []
+    # The owner's password, as `make password` writes it — never the password
+    # itself. Set, every /api route but signing in needs a session (api/auth.py).
+    hearth_password_hash: str | None = None
+    # Session cookies are sent over HTTPS only. Off solely for a browser on this
+    # machine talking plain HTTP to it, which is the one place that is safe.
+    hearth_cookie_secure: bool = True
+
+    @model_validator(mode="after")
+    def _no_network_without_a_password(self) -> "Settings":
+        # Rule 7. Answering to another name means answering other machines, and
+        # Hearth has nothing between them and the Model log but this password.
+        if self.hearth_allowed_hosts and not self.hearth_password_hash:
+            raise ValueError(
+                "HEARTH_ALLOWED_HOSTS is set but HEARTH_PASSWORD_HASH is not. Hearth "
+                "will not answer other machines without a password — run `make password`."
+            )
+        return self
+
     @field_validator("database_url", "database_url_ro", "searxng_url")
     @classmethod
     def _local(cls, url: str) -> str:
         return local_only(url)
 
-    @field_validator("search_blocked_terms", mode="before")
+    @field_validator("search_blocked_terms", "hearth_allowed_hosts", mode="before")
     @classmethod
     def _comma_separated(cls, value: object) -> object:
         if isinstance(value, str):
             return [term.strip() for term in value.split(",") if term.strip()]
         return value
+
+    @field_validator("hearth_allowed_hosts")
+    @classmethod
+    def _lowercase(cls, hosts: list[str]) -> list[str]:
+        return [host.lower() for host in hosts]
+
+    @field_validator("hearth_password_hash", mode="before")
+    @classmethod
+    def _unset_when_blank(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 class ModelSettings(BaseSettings):

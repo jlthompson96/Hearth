@@ -1,0 +1,109 @@
+# Hearth on the Synology NAS. The desktop runs LM Studio and nothing else; this
+# is everything that holds or serves your data — Postgres, SearXNG, and Hearth
+# itself (the backend, serving the UI). Reached over the LAN (CLAUDE.md, rule 5).
+#
+# Run it as a Container Manager project, from a folder on the NAS holding a
+# copy of this repository and the project's own .env (see the README).
+# docker-compose.yml stays the default everywhere else.
+#
+# What each service is reachable from:
+# - hearth: the NAS's own loopback, only. DSM's reverse proxy puts HTTPS in
+#   front of it, and that is the one way in from the LAN — so a password and a
+#   session cookie never cross the network in the clear.
+# - postgres: the NAS's LAN address, for the desktop (`make eval`, `make
+#   backup`), and the hearth container's fixed address. pg_hba.conf admits
+#   those two and nothing else — see docker/postgres/initdb-nas/02-restrict-hba.sh.
+# - searxng: the project's own network, only. Nothing on the LAN needs it.
+
+name: hearth
+
+networks:
+  default:
+    # Fixed, so the hearth container has an address pg_hba.conf can name.
+    ipam:
+      config:
+        - subnet: 172.30.42.0/24
+
+services:
+  hearth:
+    build: .
+    image: hearth:local
+    networks:
+      default:
+        # Admitted by pg_hba.conf as this one address, never the subnet: the
+        # subnet holds its gateway, .1, and a published port can deliver any
+        # LAN client from the gateway — measured under Docker Desktop.
+        ipv4_address: 172.30.42.10
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL_RO: postgresql+psycopg://hearth_ro:${HEARTH_RO_PASSWORD:?the read-only role's password}@postgres:5432/${POSTGRES_DB}
+      SEARXNG_URL: http://searxng:8080
+      SEARCH_BLOCKED_TERMS: ${SEARCH_BLOCKED_TERMS:-}
+      # The desktop, where the model is. LM Studio must serve on the local
+      # network, and Windows Firewall should admit its port from the NAS alone.
+      LM_STUDIO_BASE_URL: ${LM_STUDIO_BASE_URL:?http://<desktop address>:1234/v1}
+      CHAT_MODEL: ${CHAT_MODEL:?the model id LM Studio reports}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:?the embedding model id}
+      # The names a browser uses for Hearth, as the reverse proxy passes them.
+      HEARTH_ALLOWED_HOSTS: ${HEARTH_ALLOWED_HOSTS:?e.g. hearth.local}
+      # Required: without it, config.py refuses to start with HEARTH_ALLOWED_HOSTS set.
+      HEARTH_PASSWORD_HASH: ${HEARTH_PASSWORD_HASH:?run make password}
+      HEARTH_DATA_DIR: /data
+      HEARTH_BACKUP_DIR: /backups
+      HEARTH_EXPORT_DIR: /exports
+    ports:
+      - "127.0.0.1:${HEARTH_PORT:-8000}:8000"
+    volumes:
+      # Drop exports here from any machine; Hearth only ever reads them.
+      - ${NAS_DATA_DIR:?a NAS folder for CSV exports, e.g. /volume1/hearth/data}:/data:ro
+      - ${NAS_BACKUP_DIR:?e.g. /volume1/hearth/backups}:/backups
+      - ${NAS_EXPORT_DIR:?e.g. /volume1/hearth/exports}:/exports
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in the project's .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in the project's .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in the project's .env}
+      # Closed by default: the image's catch-all TCP line becomes `reject`, and
+      # 02-restrict-hba.sh puts the allowed lines ahead of it. If that script
+      # fails to run — and a failing init script does not stop the entrypoint —
+      # nothing can connect, which is loud, rather than everything, which is not.
+      POSTGRES_HOST_AUTH_METHOD: reject
+      HEARTH_CLIENT_IPS: ${HEARTH_CLIENT_IPS:?the desktop's LAN address}
+      HEARTH_APP_IP: 172.30.42.10
+    ports:
+      - "${NAS_BIND_IP:?the NAS LAN address}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # A shared folder, not a named volume, so DSM can snapshot it and Hyper
+      # Backup can see it. Postgres's own files: never mount this folder over
+      # SMB or NFS from another machine and point a cluster at it.
+      - ${NAS_PGDATA_DIR:?a folder on a Btrfs volume, e.g. /volume1/hearth/pgdata}:/var/lib/postgresql/data
+      # Both run once, on an empty data folder only.
+      - ./docker/postgres/initdb/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
+      - ./docker/postgres/initdb-nas/02-restrict-hba.sh:/docker-entrypoint-initdb.d/02-restrict-hba.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  searxng:
+    # Same pin as docker-compose.yml; bump both files together.
+    image: searxng/searxng:2026.10.7-6671d89be@sha256:cc026dbee25b864d7f9731957cd5ef36ba2e2d61abd2996d57f1b863483e7409
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?openssl rand -hex 32}
+    # No ports: only hearth calls it, across the project's network.
+    volumes:
+      # Writable on purpose: the image's entrypoint substitutes the secret key
+      # into settings.yml at startup, which a read-only mount would break.
+      - ./docker/searxng:/etc/searxng:rw
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
+    restart: unless-stopped

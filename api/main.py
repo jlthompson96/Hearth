@@ -12,14 +12,17 @@ configure. See web/vite.config.ts.
 
 import datetime as dt
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 import llm
 import model_choice
 from api import __version__, refusals
+from api.auth import RequireSession
 from api.hosts import LoopbackHostOnly
 from api.routes import (
     accounts,
@@ -28,6 +31,7 @@ from api.routes import (
     imports,
     model_log,
     search_audit,
+    session,
     settings,
     threads,
     training,
@@ -69,10 +73,13 @@ app = FastAPI(
 )
 
 refusals.install(app)
-# Outermost, so a request addressed to any other name reaches no route at all.
+# Added last runs first: the host is checked before the session, so a request
+# addressed to any other name reaches neither a route nor the password check.
+app.add_middleware(RequireSession)
 app.add_middleware(LoopbackHostOnly)
 
 app.include_router(health.router)
+app.include_router(session.router)
 app.include_router(chat.router)
 app.include_router(threads.router)
 app.include_router(imports.router)
@@ -81,3 +88,12 @@ app.include_router(training.router)
 app.include_router(model_log.router)
 app.include_router(search_audit.router)
 app.include_router(settings.router)
+
+# The built UI, when this runs as the NAS's container (Dockerfile): the page and
+# the API share an origin there as they do through Vite's proxy in development,
+# so the session cookie works unchanged and there is still no CORS to configure.
+# Mounted last, so every route above wins. The files hold no data, so they are
+# not behind the session; the sign-in screen is one of them.
+_dist = os.environ.get("HEARTH_WEB_DIST")
+if _dist and os.path.isdir(_dist):
+    app.mount("/", StaticFiles(directory=_dist, html=True), name="web")
