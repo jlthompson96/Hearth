@@ -389,6 +389,9 @@ make password            # asks twice; prints HEARTH_PASSWORD_HASH=scrypt:… fo
 
 ### On the NAS
 
+**Step by step, in the order that works: [docs/nas-setup.md](docs/nas-setup.md).** What
+follows is the reference for each piece.
+
 1. **Folders.** Create a shared folder on a Btrfs volume, e.g. `/volume1/hearth`. If there
    is an M.2 NVMe storage pool, put the database folder on it. Inside it, create:
    - `pgdata/`, empty, for the database
@@ -396,6 +399,9 @@ make password            # asks twice; prints HEARTH_PASSWORD_HASH=scrypt:… fo
    - `backups/` and `exports/`
    - a copy of this repository. Keep `docker/postgres/initdb-nas/02-restrict-hba.sh`
      executable.
+
+   The hearth container runs as user `10001`, which a share does not let in by default:
+   `sudo chown 10001 backups exports` and `sudo chmod 755 data`.
 2. **The project's `.env`,** beside `docker-compose.nas.yml`. Use hex passwords
    (`openssl rand -hex 24`), because they go inside URLs.
 
@@ -422,11 +428,13 @@ make password            # asks twice; prints HEARTH_PASSWORD_HASH=scrypt:… fo
    NAS_EXPORT_DIR=/volume1/hearth/exports
    ```
 
-3. **Create the project.** Container Manager → Project → Create, from that folder. It
+3. **Start it.** `sudo docker compose -f docker-compose.nas.yml up -d --build` over SSH
    builds the image (the UI is built inside it), starts Postgres, and Hearth applies
-   migrations before it serves anything.
+   migrations before it serves anything. **Moving existing data? Start `postgres` alone
+   and restore first** (below): once Hearth has migrated, `make restore` refuses the
+   database because it already holds tables.
 4. **HTTPS.** Control Panel → Login Portal → Advanced → Reverse Proxy: from
-   `https://<HEARTH_ALLOWED_HOSTS name>:443` to `http://localhost:8000`. Use a certificate
+   `https://<HEARTH_ALLOWED_HOSTS name>:8443` to `http://localhost:8000`. Use a certificate
    from Control Panel → Security → Certificate; a self-signed one needs installing as
    trusted on each device. The cookie is HTTPS-only, so signing in over plain HTTP does
    nothing. That is deliberate.
@@ -481,14 +489,18 @@ scram-sha-256 keeps the database password itself off the wire.
 
 ### Moving the data over
 
-From the native cluster on the desktop:
+From the native cluster on the desktop, **before Hearth's container first starts**:
 
 ```bash
 make backup                                   # still pointed at the native cluster
+# on the NAS: sudo docker compose -f docker-compose.nas.yml up -d postgres
 # switch the desktop's .env to the NAS as above, then:
 make restore DUMP=<that .dump file>           # creates the read-only role too
-make test
+# on the NAS: sudo docker compose -f docker-compose.nas.yml up -d --build
 ```
+
+The desktop's `DATABASE_URL_RO` password must be the NAS's `HEARTH_RO_PASSWORD`: the
+restore creates the role with the desktop's, and the container connects with the NAS's.
 
 Then check the account totals on the Data & imports screen against Fidelity's, as after
 the first import. Move the exports themselves into the NAS's `data/` folder.
