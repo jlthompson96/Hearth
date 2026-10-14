@@ -18,6 +18,12 @@
  * The backend probe from Phase 0 stays, reduced to a dot at the foot of the
  * navigation. It is the first thing you want to know when an answer does not
  * arrive.
+ *
+ * When the backend asks for a password (api/auth.py), the sign-in screen
+ * stands in for all of this until there is a session, and comes back whenever
+ * a request is refused for want of one. A session probe that fails opens the
+ * shell, so an unreachable backend shows as the dot rather than as a sign-in
+ * that cannot work.
  */
 import { useEffect, useState } from 'react'
 
@@ -28,6 +34,8 @@ import { ModelLog } from './ModelLog'
 import { SearchAudit } from './SearchAudit'
 import { Settings } from './Settings'
 import { Sidebar, type NavItem, type Health as SidebarHealth } from './Sidebar'
+import { SignIn } from './SignIn'
+import { session, SIGNED_OUT } from './api/session'
 import { ToastHost } from './toast'
 // Generated from the API's OpenAPI schema by `npm run gen:types`, and committed
 // so a fresh clone typechecks without a backend running. Never hand-edited.
@@ -82,7 +90,38 @@ function current(): Screen {
   return SCREENS.find((s) => s.hash === path)?.hash ?? '#/'
 }
 
+type Gate = 'checking' | 'open' | 'signed-out'
+
 export function App() {
+  const [gate, setGate] = useState<Gate>('checking')
+
+  useEffect(() => {
+    let live = true
+    session
+      .read()
+      .then((s) => live && setGate(s.required && !s.signed_in ? 'signed-out' : 'open'))
+      .catch(() => live && setGate('open'))
+    const signOut = () => setGate('signed-out')
+    window.addEventListener(SIGNED_OUT, signOut)
+    return () => {
+      live = false
+      window.removeEventListener(SIGNED_OUT, signOut)
+    }
+  }, [])
+
+  if (gate === 'checking') return null
+  if (gate === 'signed-out') {
+    return (
+      <>
+        <ToastHost />
+        <SignIn onSignedIn={() => setGate('open')} />
+      </>
+    )
+  }
+  return <Shell />
+}
+
+function Shell() {
   const [probe, setProbe] = useState<Probe>({ state: 'checking' })
   const [screen, setScreen] = useState<Screen>(current)
   const [panels, setPanels] = useState<Panels>(readPanels)
