@@ -159,17 +159,30 @@ step 14 checks out.
 
 ## Part 4 — start Hearth (on the NAS)
 
-**12. Build and start the rest.**
+**12. Bring the image over and start the rest.** The image is built on the Mac, for the
+NAS's processor, and copied across as a file. It is never pushed to a registry. On the Mac,
+in the repo:
 
 ```bash
-sudo docker compose -f docker-compose.nas.yml up -d --build
+make nas-image          # writes dist/hearth-<commit>-amd64.tar.gz
+scp dist/hearth-<commit>-amd64.tar.gz <your-dsm-user>@<nas-ip>:/volume1/hearth/
+```
+
+(If scp is refused, turn on SFTP under Control Panel → File Services → FTP, or copy the file
+to the `hearth` share in Finder.) Then on the NAS:
+
+```bash
+sudo docker load -i /volume1/hearth/hearth-<commit>-amd64.tar.gz
+cd /volume1/hearth/app
+sudo docker compose -f docker-compose.nas.yml up -d
 sudo docker compose -f docker-compose.nas.yml logs -f hearth
 ```
 
-The first build compiles the UI and installs the Python packages. It takes about 10–20
-minutes on the J4125. Wait for `Uvicorn running on http://0.0.0.0:8000`. The migrations
-should find nothing to do, because the restore brought the schema. All three containers
-also appear in Container Manager.
+No `--build`: the compose file names the image `hearth:local`, which the load just
+provided. Wait for `Uvicorn running on http://0.0.0.0:8000`. The migrations should find
+nothing to do, because the restore brought the schema. All three containers also appear
+in Container Manager. `sudo docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' hearth:local`
+names the commit running. One ending in `-dirty` was built with uncommitted changes.
 
 **13. HTTPS, firewall, and the cloud features.**
 
@@ -222,10 +235,14 @@ measures it against the evals' own database on the NAS.
 
 ## Updating later
 
+On the Mac, `make nas-image` and copy the archive over, as in step 12. On the NAS:
+
 ```bash
+sudo docker load -i /volume1/hearth/hearth-<commit>-amd64.tar.gz
 cd /volume1/hearth/app
-git pull
-sudo docker compose -f docker-compose.nas.yml up -d --build
+git pull                # the compose file and docker/ come from here
+sudo docker compose -f docker-compose.nas.yml up -d
 ```
 
-Hearth applies any new migrations before it serves.
+Hearth applies any new migrations before it serves. Delete old archives from
+`/volume1/hearth` once the new one runs.
