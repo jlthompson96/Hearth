@@ -22,7 +22,7 @@ export
 
 API_PORT ?= 8000
 
-.PHONY: dev migrate seed unseed test eval lint fmt install up down logs backup restore grant-ro export load-export start freeze clean hooks password
+.PHONY: dev migrate seed unseed test eval lint fmt install up down logs backup restore grant-ro export load-export start freeze clean hooks password nas-image
 
 ## dev — docker compose up + backend + frontend
 dev: install up
@@ -155,6 +155,25 @@ backup: install
 restore: install
 	@test -n "$(DUMP)" || { echo "Name the dump: make restore DUMP=<file> [DB=<name>]"; exit 1; }
 	$(PY) -m scripts.restore "$(DUMP)" $(if $(DB),--database "$(DB)")
+
+## nas-image — the hearth image for the NAS (amd64), as an archive to copy over
+#
+# Built here rather than on the NAS: the DS423+'s J4125 takes a quarter of an
+# hour over the UI build, and Node never needs to be on it. Moved as a file, not
+# through a registry, so the image is never published and the NAS holds no
+# registry credentials. The archive is named after the commit, with -dirty when
+# the tree has uncommitted changes — those are in the image too. The image also
+# carries the commit as a label: `docker inspect hearth:local` on the NAS says
+# what is running. See docs/nas-setup.md, step 12.
+NAS_IMAGE_REV = $(shell git rev-parse --short HEAD)$(shell git diff --quiet HEAD || echo -dirty)
+
+nas-image:
+	docker buildx build --platform linux/amd64 \
+		--label org.opencontainers.image.revision=$(NAS_IMAGE_REV) \
+		-t hearth:local -t hearth:$(NAS_IMAGE_REV) --load .
+	@mkdir -p dist
+	docker save hearth:local hearth:$(NAS_IMAGE_REV) | gzip > dist/hearth-$(NAS_IMAGE_REV)-amd64.tar.gz
+	@echo "Wrote dist/hearth-$(NAS_IMAGE_REV)-amd64.tar.gz — copy it to the NAS and load it (docs/nas-setup.md, step 12)."
 
 ## password — set the owner's password; prints the line for .env (api/auth.py)
 password: install

@@ -428,9 +428,11 @@ follows is the reference for each piece.
    NAS_EXPORT_DIR=/volume1/hearth/exports
    ```
 
-3. **Start it.** `sudo docker compose -f docker-compose.nas.yml up -d --build` over SSH
-   builds the image (the UI is built inside it), starts Postgres, and Hearth applies
-   migrations before it serves anything. **Moving existing data? Start `postgres` alone
+3. **Start it.** The image is built on the Mac with `make nas-image`, for the NAS's
+   amd64 processor, and copied over as a file. It is never pushed to a registry. Then
+   `sudo docker load -i <archive>` and `sudo docker compose -f docker-compose.nas.yml up -d`
+   over SSH start Postgres and Hearth, and Hearth applies migrations before it serves
+   anything. **Moving existing data? Start `postgres` alone
    and restore first** (below): once Hearth has migrated, `make restore` refuses the
    database because it already holds tables.
 4. **HTTPS.** Control Panel → Login Portal → Advanced → Reverse Proxy: from
@@ -496,7 +498,8 @@ make backup                                   # still pointed at the native clus
 # on the NAS: sudo docker compose -f docker-compose.nas.yml up -d postgres
 # switch the desktop's .env to the NAS as above, then:
 make restore DUMP=<that .dump file>           # creates the read-only role too
-# on the NAS: sudo docker compose -f docker-compose.nas.yml up -d --build
+# on the NAS: sudo docker load -i <archive from make nas-image>, then
+#             sudo docker compose -f docker-compose.nas.yml up -d
 ```
 
 The desktop's `DATABASE_URL_RO` password must be the NAS's `HEARTH_RO_PASSWORD`: the
