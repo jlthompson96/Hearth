@@ -11,7 +11,7 @@
  * An icon alone names nothing to a screen reader, so every link carries an
  * aria-label whether or not its text is showing; the rail adds a tooltip.
  */
-import { useSyncExternalStore, type ReactNode } from 'react'
+import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 
 import type { Theme } from './theme'
 
@@ -19,7 +19,16 @@ export type IconName = 'chat' | 'data' | 'entry' | 'log' | 'settings'
 
 export type NavItem = { hash: string; name: string; icon: IconName }
 
-export type Health = { tone: 'up' | 'down'; text: string; version?: string; detail?: string }
+/** One part a status line depends on. `ok` is null when it was not checked. */
+export type Check = { name: string; ok: boolean | null; detail: string }
+
+export type Health = {
+  tone: 'up' | 'warn' | 'down'
+  text: string
+  version?: string
+  /** Shown part by part when the line is hovered or focused. */
+  checks: Check[]
+}
 
 const NARROW = '(max-width: 40rem)'
 
@@ -170,17 +179,8 @@ export function Sidebar({
 
       <div className="sidebar-foot">
         <div className="statuses">
-          {(
-            [
-              ['backend', health],
-              ['model', model],
-            ] as const
-          ).map(([key, line]) => (
-            <p key={key} className="status" title={line.detail ?? line.text}>
-              <span className={`dot ${line.tone}`} />
-              <span className={expanded ? 'nav-label' : 'sr-only'}>{line.text}</span>
-            </p>
-          ))}
+          <StatusLine line={health} expanded={expanded} />
+          <StatusLine line={model} expanded={expanded} />
         </div>
 
         {expanded ? (
@@ -212,5 +212,61 @@ export function Sidebar({
         )}
       </div>
     </aside>
+  )
+}
+
+const MARK = { ok: '✓', fail: '✗', skip: '–' } as const
+
+/**
+ * A status dot, and on hover or keyboard focus the parts behind it. The tip is
+ * `position: fixed` from the line's own box because the sidebar scrolls, and a
+ * scrolling box clips anything that hangs out of it — the rail most of all.
+ * Focusable, so it opens with Tab too, and with a tap on a phone.
+ */
+function StatusLine({ line, expanded }: { line: Health; expanded: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const id = useId()
+  const [at, setAt] = useState<{ left: number; bottom: number } | null>(null)
+
+  const show = () => {
+    const box = ref.current?.getBoundingClientRect()
+    if (box) setAt({ left: box.left, bottom: window.innerHeight - box.top + 6 })
+  }
+  const hide = () => setAt(null)
+
+  return (
+    <div
+      ref={ref}
+      className="status"
+      tabIndex={0}
+      aria-describedby={at ? id : undefined}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+    >
+      <span className={`dot ${line.tone}`} />
+      <span className={expanded ? 'nav-label' : 'sr-only'}>{line.text}</span>
+      {at && (
+        <div id={id} role="tooltip" className="status-tip" style={at}>
+          <p className="status-tip-head">{line.text}</p>
+          <ul>
+            {line.checks.map((check) => {
+              const mark = check.ok === true ? 'ok' : check.ok === false ? 'fail' : 'skip'
+              return (
+                <li key={check.name}>
+                  <span className={`mark ${mark}`} aria-label={mark === 'skip' ? 'not checked' : mark}>
+                    {MARK[mark]}
+                  </span>
+                  <span>
+                    <strong>{check.name}</strong> {check.detail}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
   )
 }

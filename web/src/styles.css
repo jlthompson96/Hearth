@@ -145,6 +145,7 @@ main {
 
 .dot.up { background: var(--up); }
 .dot.down { background: var(--down); }
+.dot.warn { background: var(--warn); }
 
 /* --- chat ---------------------------------------------------------------- */
 
@@ -1760,6 +1761,41 @@ kbd {
   flex-direction: column;
   gap: 0.3rem;
 }
+
+.status { cursor: default; border-radius: var(--radius); }
+.status:focus-visible { outline: none; box-shadow: var(--ring); }
+
+/* The parts behind a dot. Fixed, from the line's box (Sidebar.tsx). */
+.status-tip {
+  position: fixed;
+  z-index: 50;
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.status-tip-head { margin: 0 0 0.4rem; font-weight: 600; }
+
+.status-tip ul {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-tip li { display: flex; gap: 0.45rem; }
+.status-tip .mark { flex: none; width: 1ch; font-weight: 700; }
+.status-tip .mark.ok { color: var(--up); }
+.status-tip .mark.fail { color: var(--down); }
+.status-tip .mark.skip { color: var(--muted); }
 
 .note {
   margin: 0;

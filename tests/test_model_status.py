@@ -11,17 +11,21 @@ needs it running.
 """
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import httpx
 import pytest
+import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 import llm
 import model_choice
 from api.main import app
+from api.routes import status as status_route
 from config import get_model_settings
 from tests.fake_lmstudio import FakeLMStudio, _entry
+from tools import errand
 
 DEFAULT = get_model_settings().chat_model
 
@@ -37,11 +41,18 @@ def _status(*entries: dict[str, Any]) -> model_choice.Status:
     return model_choice.status(FakeLMStudio(*entries).client())
 
 
+def _checks(status: model_choice.Status) -> list[bool | None]:
+    """Each check in order: passed, failed, or not checked (None)."""
+    return [c.ok for c in status.checks]
+
+
 def test_loaded_at_8192_is_ready() -> None:
     status = _status(_entry(DEFAULT, 2.64, loaded=[8192]))
 
     assert status.state == "ready"
     assert status.model == DEFAULT
+    assert _checks(status) == [True, True, True]
+    assert [c.name for c in status.checks] == ["LM Studio", "Chat model", "Context window"]
 
 
 def test_listed_but_not_loaded_is_idle_and_loads_when_asked() -> None:
@@ -50,6 +61,8 @@ def test_listed_but_not_loaded_is_idle_and_loads_when_asked() -> None:
 
     assert status.state == "idle"
     assert "first question" in status.detail
+    assert _checks(status) == [True, True, None]
+    assert "first question" in status.checks[2].detail
 
 
 def test_loaded_only_at_another_length_is_a_fault_that_names_the_fix() -> None:
@@ -59,6 +72,7 @@ def test_loaded_only_at_another_length_is_a_fault_that_names_the_fix() -> None:
 
     assert status.state == "wrong_length"
     assert "4096" in status.detail and "Settings" in status.detail
+    assert _checks(status) == [True, True, False]
 
 
 def test_a_model_lm_studio_does_not_have_is_missing() -> None:
@@ -66,6 +80,7 @@ def test_a_model_lm_studio_does_not_have_is_missing() -> None:
 
     assert status.state == "missing"
     assert DEFAULT in status.detail
+    assert _checks(status) == [True, False, None], "nothing to check a window on"
 
 
 def test_the_model_chosen_in_settings_is_the_one_checked() -> None:
@@ -84,6 +99,7 @@ def test_lm_studio_not_answering_is_unreachable_not_a_crash() -> None:
 
     assert status.state == "unreachable"
     assert "LM Studio did not answer" in status.detail
+    assert _checks(status) == [False, None, None], "a check that could not run is not a pass"
 
 
 def test_the_route_reports_it(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,4 +110,53 @@ def test_the_route_reports_it(monkeypatch: pytest.MonkeyPatch) -> None:
     with TestClient(app, base_url="http://localhost") as client:
         body = client.get("/api/status/model").json()
 
-    assert body == {"state": "ready", "model": DEFAULT, "detail": body["detail"]}
+    assert body["state"] == "ready" and body["model"] == DEFAULT
+    assert [c["ok"] for c in body["checks"]] == [True, True, True]
+
+
+# --- the backend's parts ------------------------------------------------------------
+
+
+@pytest.fixture
+def backend(monkeypatch: pytest.MonkeyPatch, conn: sa.Connection) -> Iterator[TestClient]:
+    @contextmanager
+    def _same() -> Iterator[sa.Connection]:
+        yield conn
+
+    monkeypatch.setattr(status_route, "readonly_connection", _same)
+    monkeypatch.setattr(errand, "available", lambda client=None: True)
+    yield TestClient(app, base_url="http://localhost")
+
+
+def test_the_backend_names_each_part_it_needs(backend: TestClient) -> None:
+    checks = backend.get("/api/status/backend").json()["checks"]
+
+    assert [(c["name"], c["ok"]) for c in checks] == [("Database", True), ("Web search", True)]
+
+
+def test_a_database_that_does_not_answer_is_named(
+    backend: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    @contextmanager
+    def _down() -> Iterator[sa.Connection]:
+        raise sa.exc.OperationalError("SELECT 1", {}, Exception("connection refused"))
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(status_route, "readonly_connection", _down)
+    checks = {c["name"]: c for c in backend.get("/api/status/backend").json()["checks"]}
+
+    assert checks["Database"]["ok"] is False
+    assert "OperationalError" in checks["Database"]["detail"]
+    assert "connection refused" not in checks["Database"]["detail"], (
+        "the driver's text can carry the URL"
+    )
+
+
+def test_search_down_says_what_it_costs(
+    backend: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(errand, "available", lambda client=None: False)
+    checks = {c["name"]: c for c in backend.get("/api/status/backend").json()["checks"]}
+
+    assert checks["Web search"]["ok"] is False
+    assert "not offered" in checks["Web search"]["detail"]
