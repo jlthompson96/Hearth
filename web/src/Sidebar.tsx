@@ -104,6 +104,7 @@ export function Sidebar({
   open,
   onToggle,
   health,
+  model,
   theme,
   onTheme,
 }: {
@@ -112,7 +113,10 @@ export function Sidebar({
   current: string
   open: boolean
   onToggle: () => void
+  /** Hearth's own backend. */
   health: Health
+  /** The chat model, in LM Studio on the desktop. */
+  model: Health
   theme: Theme
   onTheme: (theme: Theme) => void
 }) {
@@ -165,10 +169,19 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar-foot">
-        <p className="status" title={health.detail ?? health.text}>
-          <span className={`dot ${health.tone}`} />
-          <span className={expanded ? 'nav-label' : 'sr-only'}>{health.text}</span>
-        </p>
+        <div className="statuses">
+          {(
+            [
+              ['backend', health],
+              ['model', model],
+            ] as const
+          ).map(([key, line]) => (
+            <p key={key} className="status" title={line.detail ?? line.text}>
+              <span className={`dot ${line.tone}`} />
+              <span className={expanded ? 'nav-label' : 'sr-only'}>{line.text}</span>
+            </p>
+          ))}
+        </div>
 
         {expanded ? (
           <>

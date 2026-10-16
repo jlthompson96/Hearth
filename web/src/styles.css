@@ -1754,6 +1754,13 @@ kbd {
 
 .collapsed .status .dot { margin-right: 0; }
 
+/* Backend and model: one group, closer together than the rest of the foot. */
+.statuses {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
 .note {
   margin: 0;
   color: var(--muted);

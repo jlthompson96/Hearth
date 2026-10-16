@@ -16,8 +16,11 @@
  * every panel starts open and nothing else changes.
  *
  * The backend probe from Phase 0 stays, reduced to a dot at the foot of the
- * navigation. It is the first thing you want to know when an answer does not
- * arrive.
+ * navigation, with a second dot for the model beneath it. They are separate
+ * because they fail separately: served from the Pi, Hearth's backend can be up
+ * while the desktop running LM Studio is off. Both are asked again every half
+ * minute and whenever the window regains focus, since either can change while
+ * the page sits open.
  *
  * When the backend asks for a password (api/auth.py), the sign-in screen
  * stands in for all of this until there is a session, and comes back whenever
@@ -36,6 +39,7 @@ import { Settings } from './Settings'
 import { Sidebar, type NavItem, type Health as SidebarHealth } from './Sidebar'
 import { SignIn } from './SignIn'
 import { session, SIGNED_OUT } from './api/session'
+import { status, type ModelStatus } from './api/status'
 import { ToastHost } from './toast'
 // Generated from the API's OpenAPI schema by `npm run gen:types`, and committed
 // so a fresh clone typechecks without a backend running. Never hand-edited.
@@ -48,6 +52,14 @@ type Probe =
   | { state: 'checking' }
   | { state: 'up'; health: Health }
   | { state: 'down'; detail: string }
+
+type ModelProbe =
+  | { state: 'checking' }
+  | { state: 'known'; status: ModelStatus }
+  | { state: 'failed'; detail: string }
+
+/** How often both dots are asked again while the page is open. */
+const RECHECK_MS = 30_000
 
 const SCREENS = [
   { hash: '#/', name: 'Chat', icon: 'chat' },
@@ -72,6 +84,29 @@ function healthOf(probe: Probe): SidebarHealth {
       return { tone: 'down', text: 'Checking backend' }
     case 'down':
       return { tone: 'down', text: 'Backend unreachable', detail: probe.detail }
+  }
+}
+
+const MODEL_TEXT: Record<ModelStatus['state'], string> = {
+  ready: 'Model ready',
+  idle: 'Model idle · loads when asked',
+  wrong_length: 'Model at wrong length',
+  missing: 'Model not in LM Studio',
+  unreachable: 'Model unreachable',
+}
+
+function modelHealthOf(probe: ModelProbe): SidebarHealth {
+  switch (probe.state) {
+    case 'checking':
+      return { tone: 'down', text: 'Checking model' }
+    case 'failed':
+      return { tone: 'down', text: 'Model unknown', detail: `The backend could not be asked: ${probe.detail}` }
+    case 'known': {
+      const { state, detail } = probe.status
+      // Idle is not a fault: the first question loads it.
+      const tone = state === 'ready' || state === 'idle' ? 'up' : 'down'
+      return { tone, text: MODEL_TEXT[state], detail }
+    }
   }
 }
 
@@ -123,6 +158,7 @@ export function App() {
 
 function Shell() {
   const [probe, setProbe] = useState<Probe>({ state: 'checking' })
+  const [model, setModel] = useState<ModelProbe>({ state: 'checking' })
   const [screen, setScreen] = useState<Screen>(current)
   const [panels, setPanels] = useState<Panels>(readPanels)
   const [theme, setTheme] = useState<Theme>(readTheme)
@@ -143,18 +179,36 @@ function Shell() {
 
   useEffect(() => {
     const controller = new AbortController()
+    const said = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-    fetch('/health', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`/health returned ${response.status}`)
-        setProbe({ state: 'up', health: (await response.json()) as Health })
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return
-        setProbe({ state: 'down', detail: error instanceof Error ? error.message : String(error) })
-      })
+    const check = () => {
+      fetch('/health', { signal: controller.signal })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`/health returned ${response.status}`)
+          setProbe({ state: 'up', health: (await response.json()) as Health })
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return
+          setProbe({ state: 'down', detail: said(error) })
+        })
+      status
+        .model()
+        .then((found) => {
+          if (!controller.signal.aborted) setModel({ state: 'known', status: found })
+        })
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) setModel({ state: 'failed', detail: said(error) })
+        })
+    }
 
-    return () => controller.abort()
+    check()
+    const timer = window.setInterval(check, RECHECK_MS)
+    window.addEventListener('focus', check)
+    return () => {
+      controller.abort()
+      window.clearInterval(timer)
+      window.removeEventListener('focus', check)
+    }
   }, [])
 
   return (
@@ -167,6 +221,7 @@ function Shell() {
           open={panels.nav}
           onToggle={() => setPanels((p) => ({ ...p, nav: !p.nav }))}
           health={healthOf(probe)}
+          model={modelHealthOf(model)}
           theme={theme}
           onTheme={(next) => {
             setTheme(next)

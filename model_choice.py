@@ -59,7 +59,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import sqlalchemy as sa
@@ -161,6 +161,66 @@ def catalog(client: httpx.Client | None = None) -> list[Model]:
             )
         )
     return sorted(out, key=lambda m: m.size_bytes)
+
+
+#: The sidebar asks every half minute; a desktop that is off should not hold
+#: each of those asks for long.
+STATUS_TIMEOUT = httpx.Timeout(3.0)
+
+
+StatusState = Literal["ready", "idle", "wrong_length", "missing", "unreachable"]
+
+
+@dataclass(frozen=True)
+class Status:
+    """Whether the chat model can answer, as the sidebar shows it.
+
+    - ready: loaded at `CONTEXT_TOKENS`.
+    - idle: listed, not loaded. Not a fault — the first question loads it at
+      `CONTEXT_TOKENS` (`window_problem`).
+    - wrong_length: loaded only at another length, which a turn refuses.
+    - missing: LM Studio answers but does not have it.
+    - unreachable: LM Studio does not answer — the desktop is off, asleep, or
+      not serving on the network.
+    """
+
+    state: StatusState
+    model: str
+    detail: str
+
+
+def status(client: httpx.Client | None = None) -> Status:
+    """The active chat model's `Status`. Asks LM Studio for its list once and
+    loads nothing: a check that loaded a model would put gigabytes into VRAM
+    because a page was open."""
+    key = llm.active_chat_model()
+    http = client or httpx.Client(timeout=STATUS_TIMEOUT)
+    try:
+        entry = next((e for e in _entries(http) if e.get("key") == key), None)
+    except httpx.HTTPError as error:
+        host = httpx.URL(_root()).host
+        return Status(
+            "unreachable",
+            key,
+            f"LM Studio did not answer at {host} ({type(error).__name__}). "
+            "Is the desktop on, and LM Studio serving on the network?",
+        )
+    if entry is None:
+        return Status("missing", key, f"LM Studio answers but has no model called {key}.")
+    lengths = [
+        int((i.get("config") or {}).get("context_length") or 0)
+        for i in entry.get("loaded_instances") or []
+    ]
+    if CONTEXT_TOKENS in lengths:
+        return Status("ready", key, f"{key}, loaded at {CONTEXT_TOKENS} tokens.")
+    if not lengths:
+        return Status("idle", key, f"{key} is not loaded; the first question loads it.")
+    return Status(
+        "wrong_length",
+        key,
+        f"{key} is loaded at {', '.join(map(str, lengths))} tokens, not {CONTEXT_TOKENS}; "
+        "questions are refused until it is reloaded from the Settings screen.",
+    )
 
 
 def chosen(conn: sa.Connection) -> str | None:
