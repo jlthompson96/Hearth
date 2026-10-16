@@ -1,0 +1,25 @@
+# Restricts Hearth's published ports before Docker starts any container
+# (docker/pi/firewall.sh). Install on the Pi:
+#
+#   sudo install -m 755 docker/pi/firewall.sh /usr/local/sbin/hearth-firewall
+#   sudo install -m 644 docker/pi/hearth-firewall.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now hearth-firewall
+#
+# RequiredBy docker.service: if the rules cannot be written, Docker does not
+# start, and no port is published unrestricted. Closed, loudly.
+
+[Unit]
+Description=Hearth: restrict Docker's published ports (DOCKER-USER)
+Wants=network-pre.target
+After=network-pre.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/default/hearth-firewall
+ExecStart=/usr/local/sbin/hearth-firewall
+
+[Install]
+RequiredBy=docker.service
+WantedBy=multi-user.target

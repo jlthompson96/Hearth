@@ -1,0 +1,13 @@
+# Runs hearth-backup.service nightly. Persistent: a night the Pi was off is
+# made up at the next boot.
+
+[Unit]
+Description=Hearth: nightly backup to the NAS
+
+[Timer]
+OnCalendar=*-*-* 03:30
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

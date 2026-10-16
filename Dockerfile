@@ -1,5 +1,5 @@
-# Hearth's backend, serving the built UI from the same origin, for the NAS
-# (docker-compose.nas.yml). The model is not in here and never will be: LM
+# Hearth's backend, serving the built UI from the same origin, for the Pi
+# (docker-compose.pi.yml). The model is not in here and never will be: LM
 # Studio runs on the desktop, and this calls it across the LAN.
 
 # --- the UI --------------------------------------------------------------------
@@ -52,5 +52,5 @@ USER hearth
 EXPOSE 8000
 # Migrations first, so a new image never runs against an old schema. Then the
 # server: inside the container on every interface, and the compose file decides
-# which of the NAS's addresses publish it — loopback only, for the reverse proxy.
+# who reaches it — on the Pi, nothing publishes it, and Caddy is the way in.
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn api.main:app --host 0.0.0.0 --port 8000"]

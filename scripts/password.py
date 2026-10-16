@@ -21,7 +21,7 @@ def main() -> None:
         sys.exit(f"At least {MINIMUM} characters.")
     if getpass.getpass("Again: ") != password:
         sys.exit("The two did not match.")
-    print("\nPut this line in .env (the NAS project's, when Hearth runs there):\n")
+    print("\nPut this line in .env (the Pi's, when Hearth runs there):\n")
     print(f"HEARTH_PASSWORD_HASH={hash_password(password)}")
 
 

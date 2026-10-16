@@ -1,19 +1,24 @@
-# Hearth on the Synology NAS. The desktop runs LM Studio and nothing else; this
-# is everything that holds or serves your data — Postgres, SearXNG, and Hearth
-# itself (the backend, serving the UI). Reached over the LAN (CLAUDE.md, rule 5).
+# Hearth on the Raspberry Pi 5. The desktop runs LM Studio and nothing else;
+# this is everything that holds or serves your data — Postgres, SearXNG, Hearth
+# itself (the backend, serving the UI) and Caddy in front of it. Reached over
+# the LAN (CLAUDE.md, rule 5).
 #
-# Run it as a Container Manager project, from a folder on the NAS holding a
-# copy of this repository and the project's own .env (see the README).
-# docker-compose.yml stays the default everywhere else.
+# Run it from /srv/hearth/app, a copy of this repository, with the Pi's own
+# .env beside this file (docs/pi-setup.md). docker-compose.yml stays the
+# default everywhere else.
 #
 # What each service is reachable from:
-# - hearth: the NAS's own loopback, only. DSM's reverse proxy puts HTTPS in
-#   front of it, and that is the one way in from the LAN — so a password and a
-#   session cookie never cross the network in the clear.
-# - postgres: the NAS's LAN address, for the desktop (`make eval`, `make
+# - caddy: the Pi's LAN address, 443, and 80 only to redirect to 443. The one
+#   way into Hearth, so a password and a session cookie never cross the network
+#   in the clear.
+# - hearth: the project's own network, only. Caddy reaches it by name.
+# - postgres: the Pi's LAN address, for the desktop (`make eval`, `make
 #   backup`), and the hearth container's fixed address. pg_hba.conf admits
-#   those two and nothing else — see docker/postgres/initdb-nas/02-restrict-hba.sh.
+#   those two and nothing else — see docker/postgres/initdb-pi/02-restrict-hba.sh.
 # - searxng: the project's own network, only. Nothing on the LAN needs it.
+#
+# A published port is not protected by ufw: Docker's own iptables rules see the
+# packet first. docker/pi/firewall.sh restricts them in the DOCKER-USER chain.
 
 name: hearth
 
@@ -25,6 +30,26 @@ networks:
         - subnet: 172.30.42.0/24
 
 services:
+  caddy:
+    image: caddy:2.11.2@sha256:25cdc846626b62d05f6b633b9b40c2c9f6ef89b515dc76133cefd920f7dbe562
+    depends_on:
+      - hearth
+    environment:
+      HEARTH_HOSTNAME: ${HEARTH_HOSTNAME:?the name devices use for Hearth, e.g. hearth.local}
+    ports:
+      # IPv4 on the LAN address only. Unbound, Docker would publish on IPv6 as
+      # well, which firewall.sh does not open.
+      - "${PI_BIND_IP:?the Pi's LAN address}:443:443"
+      - "${PI_BIND_IP}:80:80"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The local CA's root key lives here. Kept across restarts so each device
+      # trusts the root once; lost, every device trusts a new one.
+      - ${PI_CADDY_DIR:?e.g. /srv/hearth/caddy}:/data
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    restart: unless-stopped
+
   hearth:
     build: .
     image: hearth:local
@@ -43,24 +68,24 @@ services:
       SEARXNG_URL: http://searxng:8080
       SEARCH_BLOCKED_TERMS: ${SEARCH_BLOCKED_TERMS:-}
       # The desktop, where the model is. LM Studio must serve on the local
-      # network, and Windows Firewall should admit its port from the NAS alone.
+      # network, and Windows Firewall should admit its port from the Pi alone.
       LM_STUDIO_BASE_URL: ${LM_STUDIO_BASE_URL:?http://<desktop address>:1234/v1}
       CHAT_MODEL: ${CHAT_MODEL:?the model id LM Studio reports}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:?the embedding model id}
-      # The names a browser uses for Hearth, as the reverse proxy passes them.
-      HEARTH_ALLOWED_HOSTS: ${HEARTH_ALLOWED_HOSTS:?e.g. hearth.local}
+      # The names a browser uses for Hearth, as Caddy passes them through.
+      HEARTH_ALLOWED_HOSTS: ${HEARTH_ALLOWED_HOSTS:-${HEARTH_HOSTNAME}}
       # Required: without it, config.py refuses to start with HEARTH_ALLOWED_HOSTS set.
       HEARTH_PASSWORD_HASH: ${HEARTH_PASSWORD_HASH:?run make password}
       HEARTH_DATA_DIR: /data
       HEARTH_BACKUP_DIR: /backups
       HEARTH_EXPORT_DIR: /exports
-    ports:
-      - "127.0.0.1:${HEARTH_PORT:-8000}:8000"
+    # No ports: Caddy is the way in.
     volumes:
       # Drop exports here from any machine; Hearth only ever reads them.
-      - ${NAS_DATA_DIR:?a NAS folder for CSV exports, e.g. /volume1/hearth/data}:/data:ro
-      - ${NAS_BACKUP_DIR:?e.g. /volume1/hearth/backups}:/backups
-      - ${NAS_EXPORT_DIR:?e.g. /volume1/hearth/exports}:/exports
+      - ${PI_DATA_DIR:?a folder for CSV exports, e.g. /srv/hearth/data}:/data:ro
+      # Copied to the NAS nightly by docker/pi/hearth-backup.service.
+      - ${PI_BACKUP_DIR:?e.g. /srv/hearth/backups}:/backups
+      - ${PI_EXPORT_DIR:?e.g. /srv/hearth/exports}:/exports
     restart: unless-stopped
 
   postgres:
@@ -77,15 +102,14 @@ services:
       HEARTH_CLIENT_IPS: ${HEARTH_CLIENT_IPS:?the desktop's LAN address}
       HEARTH_APP_IP: 172.30.42.10
     ports:
-      - "${NAS_BIND_IP:?the NAS LAN address}:${POSTGRES_PORT:-5432}:5432"
+      - "${PI_BIND_IP}:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      # A shared folder, not a named volume, so DSM can snapshot it and Hyper
-      # Backup can see it. Postgres's own files: never mount this folder over
-      # SMB or NFS from another machine and point a cluster at it.
-      - ${NAS_PGDATA_DIR:?a folder on a Btrfs volume, e.g. /volume1/hearth/pgdata}:/var/lib/postgresql/data
+      # On the Pi's own SSD. Never mount this folder over SMB or NFS from
+      # another machine and point a cluster at it.
+      - ${PI_PGDATA_DIR:?a folder on the Pi's SSD, e.g. /srv/hearth/pgdata}:/var/lib/postgresql/data
       # Both run once, on an empty data folder only.
       - ./docker/postgres/initdb/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
-      - ./docker/postgres/initdb-nas/02-restrict-hba.sh:/docker-entrypoint-initdb.d/02-restrict-hba.sh:ro
+      - ./docker/postgres/initdb-pi/02-restrict-hba.sh:/docker-entrypoint-initdb.d/02-restrict-hba.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s

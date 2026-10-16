@@ -1,6 +1,6 @@
 #!/bin/sh
 # Only the desktop and Hearth's own container may connect.
-# docker-compose.nas.yml sets POSTGRES_HOST_AUTH_METHOD=reject, so the image's
+# docker-compose.pi.yml sets POSTGRES_HOST_AUTH_METHOD=reject, so the image's
 # entrypoint has just written `host all all all reject` — every TCP connection
 # refused. This puts scram-sha-256 lines ahead of it, which pg_hba.conf reads
 # top down, first match winning:
@@ -12,7 +12,7 @@
 # Local socket connections, which the healthcheck uses, are untouched.
 #
 # Runs once, on an empty data folder. If the desktop's address changes, edit
-# pg_hba.conf in NAS_PGDATA_DIR and restart the container — and give the
+# pg_hba.conf in PI_PGDATA_DIR and restart the container — and give the
 # desktop a DHCP reservation so it does not.
 #
 # A failing init script does not stop the entrypoint — measured, 2026-10-14 —

@@ -89,7 +89,7 @@ app.include_router(model_log.router)
 app.include_router(search_audit.router)
 app.include_router(settings.router)
 
-# The built UI, when this runs as the NAS's container (Dockerfile): the page and
+# The built UI, when this runs as the Pi's container (Dockerfile): the page and
 # the API share an origin there as they do through Vite's proxy in development,
 # so the session cookie works unchanged and there is still no CORS to configure.
 # Mounted last, so every route above wins. The files hold no data, so they are

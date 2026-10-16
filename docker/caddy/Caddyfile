@@ -1,0 +1,33 @@
+# HTTPS in front of Hearth on the Pi (docker-compose.pi.yml).
+#
+# The certificate comes from Caddy's own local CA, never from a public one, so
+# nothing here asks the internet for anything (rule 5): no ACME, no OCSP. Each
+# device trusts the CA's root once — docs/pi-setup.md, step 15. The root is
+# kept in /data, which the compose file mounts from the Pi's SSD.
+{
+	local_certs
+	# Inside a container there is no trust store worth writing to; devices are
+	# given the root by hand.
+	skip_install_trust
+	# A local CA runs no OCSP responder, and nothing should go asking for one.
+	ocsp_stapling off
+	# Nothing reconfigures Caddy at runtime. A change is a container restart.
+	admin off
+	pki {
+		ca local {
+			name "Hearth"
+		}
+	}
+	servers {
+		# HTTP/3 is UDP, which is not published; without this Caddy would
+		# advertise it and every browser would try it first.
+		protocols h1 h2
+	}
+}
+
+{$HEARTH_HOSTNAME} {
+	tls internal
+	# The Host header passes through unchanged, so api/hosts.py sees the name
+	# in the address bar and checks it against HEARTH_ALLOWED_HOSTS.
+	reverse_proxy hearth:8000
+}

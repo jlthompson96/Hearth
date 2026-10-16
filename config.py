@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     hearth_data_dir: Path | None = None
 
     # Names the API answers to beyond this machine's own, comma-separated — the
-    # NAS's name and address when Hearth is served there. Empty, it answers to
+    # Pi's name when Hearth is served there. Empty, it answers to
     # localhost alone (api/hosts.py).
     hearth_allowed_hosts: Annotated[list[str], NoDecode] = []
     # The owner's password, as `make password` writes it — never the password

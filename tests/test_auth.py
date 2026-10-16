@@ -1,6 +1,6 @@
 """The password in front of the API (api/auth.py).
 
-Served from the NAS, Hearth answers every device at home, and this is what
+Served from the Pi, Hearth answers every device at home, and this is what
 stands between them and the Model log. So the tests are about the gate's
 edges: every /api route behind it, a forged or stale session refused, guessing
 slowed, and no way to open Hearth to the network without setting a password.

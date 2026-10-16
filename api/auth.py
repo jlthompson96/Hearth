@@ -1,7 +1,7 @@
 """One owner, one password, and nothing under /api without it.
 
 Hearth was built to answer this machine alone, and api/hosts.py held that line.
-Served from the NAS it answers every device at home, so what stands between a
+Served from the Pi it answers every device at home, so what stands between a
 phone on the Wi-Fi and the Model log — every prompt, balances included — is
 this. Off until `HEARTH_PASSWORD_HASH` is set, and config.py will not let
 `HEARTH_ALLOWED_HOSTS` be set without it.
@@ -47,7 +47,7 @@ WINDOW = 15 * 60
 OPEN = frozenset({"/health", "/api/login", "/api/logout", "/api/session"})
 GUARDED_PREFIXES = ("/api/", "/docs", "/redoc", "/openapi.json")
 
-# scrypt at 2**15: 32 MiB and a few hundred milliseconds on the NAS's J4125,
+# scrypt at 2**15: 32 MiB and a noticeable fraction of a second per guess,
 # which is the point. maxmem must clear 128 * r * n, which is exactly 32 MiB.
 _N, _R, _P = 2**15, 8, 1
 _MAXMEM = 64 * 1024 * 1024
@@ -113,7 +113,7 @@ def valid(token: str | None, stored: str, now: float) -> bool:
 
 class Throttle:
     """Wrong passwords, counted across every device: there is one owner, and
-    behind the NAS's reverse proxy every request arrives from the same address
+    behind the Pi's reverse proxy every request arrives from the same address
     anyway. Kept in memory, so a restart forgets it — which a guesser cannot
     cause from outside."""
 

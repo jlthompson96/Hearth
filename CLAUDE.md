@@ -1,7 +1,9 @@
 # CLAUDE.md
 
 **Hearth** — a local-first personal assistant. An orchestrator routes each turn to a
-specialist agent working over my own data. Everything runs on my machine.
+specialist agent working over my own data. Nothing leaves my local network: it may run
+across several machines at home (desktop for the model, a Pi for the app and database, the
+NAS for backups), but no data or call goes beyond the LAN.
 
 Phase plan: @docs/plan.md
 UI reference: the Design canvas (seven screens, link in docs/plan.md)
@@ -71,8 +73,9 @@ and 7 apply to the code you write, in every phase.
 - React + TypeScript + Vite; TS types generated from the FastAPI OpenAPI schema
 - LangChain 1.x + LangGraph 1.x
 - Postgres via `pgvector/pgvector:pg17` — structured tables and vectors in one instance
-- Inference: LM Studio OpenAI-compatible endpoint, `http://localhost:1234/v1`, via
-  `ChatOpenAI` with `base_url` override and a dummy api_key
+- Inference: LM Studio OpenAI-compatible endpoint, from `LM_STUDIO_BASE_URL` —
+  `http://localhost:1234/v1` in development, the desktop's LAN address when Hearth runs on
+  the Pi — via `ChatOpenAI` with `base_url` override and a dummy api_key
 - Model names read from env. Never hardcoded. Assume they change.
 - SearXNG self-hosted in docker-compose
 - MCP via `langchain-mcp-adapters` (`MultiServerMCPClient`). `langchain.mcp` is beta and
