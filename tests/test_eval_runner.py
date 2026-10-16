@@ -69,7 +69,7 @@ def test_a_run_that_raises_once_still_counts_the_runs_that_passed(
     ]
     outcomes = iter(planned)
 
-    def once(case: Case, today: dt.date, notes: list[str] | None = None) -> tuple[bool, str]:
+    def once(case: Case, today: dt.date) -> tuple[bool, str]:
         outcome = next(outcomes)
         if isinstance(outcome, Exception):
             raise outcome
@@ -108,10 +108,12 @@ def test_incomplete_and_dirty_are_both_named(recorded: Path) -> None:
     assert path.name == "abc1234-incomplete-dirty.json"
 
 
-def test_a_figure_without_its_sign_is_noted_and_does_not_fail_the_case(
+def test_a_figure_without_its_sign_fails_the_case(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Report-only until a measured run shows what enforcing it would catch."""
+    """Enforced since Phase B of the grounding-unitless review: a measured run
+    showed no false positives, so a figure written without its sign ("38
+    thousand") is a flag like any other, not a note beside a pass."""
     from agents.loop import DoneEvent, Event, TokenEvent, ToolResultEvent
 
     def answers(*_: object, **__: object) -> Iterator[Event]:
@@ -123,5 +125,6 @@ def test_a_figure_without_its_sign_is_noted_and_does_not_fail_the_case(
 
     result = runner.run(_grounded_case(), TODAY, runs=2)
 
-    assert (result.passed, result.ok) == (2, True)
-    assert result.notes == ["would flag without a sign: ['38 thousand']"]
+    assert (result.passed, result.ok) == (0, False)
+    why = result.detail[0]
+    assert "figures no tool returned: ['38 thousand']" in why
