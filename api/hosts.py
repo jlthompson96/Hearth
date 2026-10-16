@@ -12,7 +12,7 @@ reads the host as everything before the first colon: "[::1]:8000" becomes "["
 and IPv6 loopback is refused — and localhost resolves to ::1 first on the GPU
 host. The header is read the way a URL's host is read instead.
 
-Served from the NAS, the API answers other machines too, by the names listed in
+Served from the Pi, the API answers other machines too, by the names listed in
 `HEARTH_ALLOWED_HOSTS`; config.py refuses that list without a password, and
 api/auth.py asks for it.
 
@@ -33,7 +33,7 @@ LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 def allowed(name: str | None) -> bool:
-    """This machine, or a name `HEARTH_ALLOWED_HOSTS` adds — the NAS's, when
+    """This machine, or a name `HEARTH_ALLOWED_HOSTS` adds — the Pi's, when
     Hearth is served from there. Any other name is still a rebinding page's.
     Read per request, so a test can add a name."""
     return name in LOOPBACK or name in get_settings().hearth_allowed_hosts

@@ -1,0 +1,10 @@
+# /etc/default/hearth-firewall — read by hearth-firewall.service.
+# After a change: sudo systemctl restart hearth-firewall
+
+# The desktop, space-separated if more than one. The same as the project's .env.
+HEARTH_CLIENT_IPS=192.168.1.10
+# The home network, which may reach Hearth over HTTPS.
+LAN_SUBNET=192.168.1.0/24
+# The Pi's wired interface (`ip -br addr`).
+LAN_IF=eth0
+POSTGRES_PORT=5432

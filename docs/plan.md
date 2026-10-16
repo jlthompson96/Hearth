@@ -607,7 +607,7 @@ Not yet measured: the host had no LM Studio running and no `.env` or Postgres in
 checkout, so a development cluster was made for the tests and **no eval was run**. Three
 branches need one before they merge, the first of them the fix to `main`.
 
-## Storage and hosting: Hearth moves to the NAS (2026-10-14)
+## Storage and hosting: Hearth moves to the NAS (2026-10-14), then to a Pi (2026-10-16)
 
 Three options were weighed for storage: the local Postgres, the Synology NAS (a DS423+),
 or a Notion database through its API. **Notion was ruled out**:
@@ -665,17 +665,62 @@ LAN port at all, because only Hearth calls it.
   backup to its mounted folder.
 - The two restore round trips need `pg_dump` on the test machine and were not run here.
 
-**Not yet done, and only the owner's hardware can do it:**
-- Running it on the DS423+.
-- Seeing whether Synology's Docker keeps the desktop's address on incoming connections.
-  If it doesn't, the refusal names the address it saw, and the firewall rule becomes the
-  restriction (README).
-- LM Studio serving on the LAN, behind a Windows Firewall rule.
-- The move itself, by `make backup` → `make restore`, with the Fidelity totals checked.
-- An eval run with the model reached across the LAN.
-
 What crosses the LAN in the clear is named in the README: prompts to LM Studio, and the
 desktop's Postgres connections.
+
+**Addendum, 2026-10-16: Hearth runs on a Raspberry Pi 5, and the NAS keeps the
+backups.** Partway through the NAS setup, and before any real data was restored there,
+the owner chose a Pi 5 booting from a USB 3 SSD to host everything the NAS was to run.
+The desktop still runs LM Studio alone. The NAS stays in the picture as the backup target.
+Everything above carries over unchanged — the password, the startup guard, Postgres
+closed by default, the container's one admitted address, the image — and the plan is
+`docs/pi-plan.md`. The Pi is arm64 like the Mac, so `make pi-image` builds natively.
+
+The Pi lacks three things DSM supplied, and each was replaced in the repository rather
+than by hand:
+- **HTTPS: Caddy, with its own local CA** (`docker/caddy/Caddyfile`). No ACME and OCSP
+  stapling off, so it asks the internet for nothing. Each device trusts its root once.
+  `hearth` lost its published port; Caddy reaches it by name.
+- **The firewall: Docker's `DOCKER-USER` chain, not `ufw`.** This was the finding that
+  mattered. Docker publishes a port by DNAT and forwards the packet, so it never reaches
+  the `INPUT` chain `ufw` filters: a `ufw` rule on 5432 would have looked like protection
+  and been none. `docker/pi/firewall.sh` allows 443 and 80 from the subnet and Postgres
+  from the desktop, and drops every other new connection on the LAN interface. Its unit
+  runs before Docker, and Docker requires it, so a failure to write the rules leaves
+  nothing published at all. `ufw` still guards the Pi itself, SSH and mDNS.
+- **Backups: a systemd timer, to the NAS over NFS** (`docker/pi/hearth-backup.*`). The
+  existing `scripts.backup`, then a check that the NFS export really is mounted — so a
+  dropped mount fails rather than filling the empty folder beneath it and reading as
+  success — then `rsync`, which never deletes on the NAS.
+
+**Measured on the Mac under Docker, 2026-10-16:**
+- The stack started with throwaway values. Caddy served the UI over HTTP/2 with a
+  certificate that verified against its own root, redirected 80 with a 308 and
+  advertised no HTTP/3. An unknown Host got Caddy's empty reply and never reached
+  Hearth.
+- Through Caddy: `/api/threads` 401 without a session; a wrong password 401; the right
+  one 204 with an `HttpOnly; SameSite=strict; Secure` cookie; then 200.
+- `hearth` had no published port, SearXNG answered by name from inside it, the Mac was
+  refused by `pg_hba.conf`, and a backup landed in the mounted folder.
+- `make test`'s suite against the Pi compose file's Postgres: 849 passed. The two restore
+  round trips again need `pg_dump` on the Mac and did not run.
+- **The firewall script was run on a real Linux kernel**, Docker Desktop's, in a
+  privileged container: namespaces for a LAN machine and a container, Docker's DNAT and
+  `FORWARD → DOCKER-USER` shape in between. Twice over, idempotently: 443 and 80 open to
+  the subnet, 5432 open to the listed address and dropped for another, an unpublished
+  port dropped, and a container's own outbound connection untouched. An address list of
+  whitespace failed loudly. `shellcheck` is clean on both scripts.
+
+**Not yet done, and only the owner's hardware can do it** (`docs/pi-setup.md`):
+- Running it on the Pi, and the power-cycle check that it all comes back.
+- The firewall on the Pi's own Docker: `nc -vz <pi-ip> 5432` from the Mac must time out.
+- LM Studio serving on the LAN, behind a Windows Firewall rule naming the Pi.
+- The move itself, by `make backup` → `make restore`, with the Fidelity totals checked.
+- A backup reaching the NAS, and the unit failing with the mount gone.
+- An eval run with the model reached across the LAN.
+
+Nothing real was ever restored on the NAS. Taking down what was set up there is the last
+section of `docs/pi-setup.md`.
 
 ## Cut deliberately
 
@@ -689,11 +734,12 @@ transaction-level ingestion (drags in merchant categorization).
    body-weight history importer; its first real import is the test of what the screenshot
    could not show.
 2. SearXNG without Docker — blocks Phase 9, and Langfuse with it. **Path chosen
-   2026-10-14: it runs on the NAS** (see "Storage and hosting" above). Open until it answers there.
-   Langfuse stays out regardless: four more services on a NAS for one user is the cost
-   that kept it out at the start.
-3. pgvector on the host — blocks Phase 10. **Path chosen 2026-10-14: Postgres runs on the
-   NAS from the `pgvector/pgvector:pg17` image**, so no MSVC build is needed. Open until
+   2026-10-14, moved 2026-10-16: it runs on the Pi** (see "Storage and hosting" above).
+   It answered by name in the Pi stack under Docker on the Mac; open until it answers on
+   the Pi. Langfuse stays out regardless: four more services on a Pi for one user is the
+   cost that kept it out at the start.
+3. pgvector on the host — blocks Phase 10. **Path chosen 2026-10-14, moved 2026-10-16: Postgres
+   runs on the Pi from the `pgvector/pgvector:pg17` image**, so no MSVC build is needed. Open until
    the move is made. Phase 10 must still assert the extension is there rather than
    inherit the test harness's warning.
 

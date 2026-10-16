@@ -1,6 +1,6 @@
 # The image is built from this directory. Nothing private goes into it: .env is
-# passed to the container at run time by the NAS project, and real data is
-# mounted read-only from a NAS share, never copied in.
+# passed to the container at run time by the Pi's compose project, and real
+# data is mounted read-only from a folder on the Pi, never copied in.
 .env
 .env.*
 !.env.example

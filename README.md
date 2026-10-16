@@ -209,6 +209,7 @@ text is not in this table, because it is not implemented.
 | **Real data stays out of the repo** | `HEARTH_DATA_DIR` inside the repository is refused; the evals run on their own fixture database, so no real figure reaches a committed result file | `tests/test_datadir.py`, `evals/conftest.py` |
 | **Only this machine's own pages can read the API** | `api/hosts.py`: a request whose Host header does not name this machine — `localhost`, `127.0.0.1` or `::1` — or a name listed in `HEARTH_ALLOWED_HOSTS` is refused before any route runs. Listening on 127.0.0.1 keeps other machines out but not other web pages: one that re-points its own domain at 127.0.0.1 (DNS rebinding) could otherwise read the thread history and the Model log as its own origin | `tests/test_hosts.py`, `tests/test_auth.py` |
 | **Nothing on the network without a password** | `config.py` refuses to start with `HEARTH_ALLOWED_HOSTS` set and no `HEARTH_PASSWORD_HASH`. With one set, `api/auth.py` refuses every `/api` route, and the API description, without a signed session cookie (`HttpOnly`, `SameSite=Strict`, `Secure`). Guessing is throttled. The host is checked first, so a rebinding page learns nothing | `tests/test_auth.py`: every route, read from the app's own schema. 30 tests fail with the gate removed |
+| **Only the desktop reaches Postgres; only the LAN reaches Hearth** (on the Pi) | Two independent locks. `docker/pi/firewall.sh`, in Docker's `DOCKER-USER` chain because `ufw` never sees a published port: 443 and 80 from the home subnet, Postgres from the desktop, every other new connection dropped. Docker will not start without it. Then `pg_hba.conf`, closed by default (`POSTGRES_HOST_AUTH_METHOD=reject`) and opened to the desktop and the `hearth` container's one address | By hand on the Pi — it needs Linux: `nc -vz <pi-ip> 5432` from an unlisted machine times out, and the `restricted to` log line (docs/pi-setup.md, steps 10 and 20). `shellcheck` on the script |
 
 Rules 8–11 govern MCP, which arrives in Phase 12; no MCP code exists yet.
 
@@ -261,8 +262,8 @@ Backlog, unscheduled: a morning digest, and CSV and chart export.
   (winget does not add it to its Links directory, so add its `bin` to PATH by hand).
 - Node 20.19+ or 22.12+ (Vite 7's floor)
 - Docker with Compose v2 — **or** a native Postgres 17, see
-  [Postgres without Docker](#postgres-without-docker) — **or** a Synology NAS running
-  Hearth itself, see [Running Hearth on the NAS](#running-hearth-on-the-nas)
+  [Postgres without Docker](#postgres-without-docker) — **or** a Raspberry Pi 5 running
+  Hearth itself, see [Running Hearth on the Pi](#running-hearth-on-the-pi)
 - [LM Studio](https://lmstudio.ai) serving an OpenAI-compatible endpoint on
   `http://localhost:1234/v1`
 
@@ -345,29 +346,33 @@ Two things you do not get, both deliberate rather than overlooked:
 
 A native cluster is not a service and does not survive a reboot. `make up` starts it.
 
-## Running Hearth on the NAS
+## Running Hearth on the Pi
 
 On the owner's setup, the desktop runs **LM Studio and nothing else**. Everything that
-holds or serves data runs on a Synology DS423+ from `docker-compose.nas.yml`:
+holds or serves data runs on a Raspberry Pi 5, booting from a USB 3 SSD, from
+`docker-compose.pi.yml`. The NAS keeps a copy of every nightly dump.
 
 | Service | What it is | Reachable from |
 |---|---|---|
-| `hearth` | The backend, serving the built UI (`Dockerfile`) | The NAS's loopback only. DSM's reverse proxy puts HTTPS in front of it |
-| `postgres` | `pgvector/pgvector:pg17`, so pgvector comes with it | The desktop and the `hearth` container, by address (`pg_hba.conf`) |
-| `searxng` | Errand's search engine | The `hearth` container only. No port on the LAN |
+| `caddy` | HTTPS in front of Hearth, with a certificate from its own local CA (`docker/caddy/Caddyfile`) | The home subnet, on 443, and on 80 only to be redirected |
+| `hearth` | The backend, serving the built UI (`Dockerfile`) | Caddy only. No published port |
+| `postgres` | `pgvector/pgvector:pg17`, so pgvector comes with it | The desktop and the `hearth` container, by address (firewall and `pg_hba.conf`) |
+| `searxng` | Errand's search engine | The `hearth` container only. No published port |
 
-This also clears the two gaps above: the NAS has the Docker the desktop lacks, and the
-image ships pgvector. Every address Hearth calls is still on the LAN, and
+This also clears the two gaps above: the Pi has the Docker the desktop lacks, and the
+image ships pgvector. The Pi is arm64 like the Mac, so the image builds natively there
+with `make pi-image`. Every address Hearth calls is still on the LAN, and
 `config.local_only()` checks that at startup. Searches still pass
 `validate_search_query()` and are audited before any request reaches SearXNG.
 
 **What is never done:** pointing a cluster at a NAS share over SMB or NFS. Postgres
 depends on fsync and locking behaviour that network filesystems don't reliably provide,
-and the failure is silent corruption. The NAS runs Postgres itself.
+and the failure is silent corruption. The Pi runs Postgres on its own SSD; the NAS
+receives finished dumps, nothing live.
 
 ### The password
 
-Hearth was built to answer one machine, and on the NAS it answers every device at home.
+Hearth was built to answer one machine, and on the Pi it answers every device at home.
 So it asks for a password (`api/auth.py`):
 - **Storage.** The password is kept as a scrypt hash in `.env`, never in plain text.
 - **Sessions.** A session is a signed cookie lasting 30 days. It is `HttpOnly` (no script
@@ -384,25 +389,22 @@ proves that every `/api` route refuses a request without a session. It was shown
 30 tests, with the gate removed.
 
 ```bash
-make password            # asks twice; prints HEARTH_PASSWORD_HASH=scrypt:… for the NAS .env
+make password            # asks twice; prints HEARTH_PASSWORD_HASH=scrypt:… for the Pi's .env
 ```
 
-### On the NAS
+### On the Pi
 
-**Step by step, in the order that works: [docs/nas-setup.md](docs/nas-setup.md).** What
+**Step by step, in the order that works: [docs/pi-setup.md](docs/pi-setup.md).** What
 follows is the reference for each piece.
 
-1. **Folders.** Create a shared folder on a Btrfs volume, e.g. `/volume1/hearth`. If there
-   is an M.2 NVMe storage pool, put the database folder on it. Inside it, create:
+1. **Folders,** under `/srv/hearth` on the SSD:
+   - `app/`, a copy of this repository. Keep
+     `docker/postgres/initdb-pi/02-restrict-hba.sh` executable.
    - `pgdata/`, empty, for the database
    - `data/`, where Fidelity and weight exports go. Hearth only ever reads it.
-   - `backups/` and `exports/`
-   - a copy of this repository. Keep `docker/postgres/initdb-nas/02-restrict-hba.sh`
-     executable.
-
-   The hearth container runs as user `10001`, which a share does not let in by default:
-   `sudo chown 10001 backups exports` and `sudo chmod 755 data`.
-2. **The project's `.env`,** beside `docker-compose.nas.yml`. Use hex passwords
+   - `backups/` and `exports/`, owned by user `10001`, which the hearth container runs as
+   - `caddy/`, mode 700: the local CA, private key included
+2. **The project's `.env`,** beside `docker-compose.pi.yml`, mode 600. Use hex passwords
    (`openssl rand -hex 24`), because they go inside URLs.
 
    ```bash
@@ -417,57 +419,69 @@ follows is the reference for each piece.
    CHAT_MODEL=<id LM Studio reports>
    EMBEDDING_MODEL=<id LM Studio reports>
 
-   HEARTH_ALLOWED_HOSTS=<the name the reverse proxy serves, e.g. hearth.local>
+   HEARTH_HOSTNAME=hearth.local          # Caddy's site; HEARTH_ALLOWED_HOSTS defaults to it
    HEARTH_PASSWORD_HASH=<from make password>
 
-   NAS_BIND_IP=<NAS address>             # Postgres's port, for the desktop
+   PI_BIND_IP=<Pi address>               # where 443, 80 and Postgres's port are published
    HEARTH_CLIENT_IPS=<desktop address>   # the one LAN machine Postgres admits
-   NAS_PGDATA_DIR=/volume1/hearth/pgdata
-   NAS_DATA_DIR=/volume1/hearth/data
-   NAS_BACKUP_DIR=/volume1/hearth/backups
-   NAS_EXPORT_DIR=/volume1/hearth/exports
+   PI_PGDATA_DIR=/srv/hearth/pgdata
+   PI_DATA_DIR=/srv/hearth/data
+   PI_BACKUP_DIR=/srv/hearth/backups
+   PI_EXPORT_DIR=/srv/hearth/exports
+   PI_CADDY_DIR=/srv/hearth/caddy
    ```
 
-3. **Start it.** The image is built on the Mac with `make nas-image`, for the NAS's
-   amd64 processor, and copied over as a file. It is never pushed to a registry. Then
-   `sudo docker load -i <archive>` and `sudo docker compose -f docker-compose.nas.yml up -d`
-   over SSH start Postgres and Hearth, and Hearth applies migrations before it serves
-   anything. **Moving existing data? Start `postgres` alone
-   and restore first** (below): once Hearth has migrated, `make restore` refuses the
-   database because it already holds tables.
-4. **HTTPS.** Control Panel → Login Portal → Advanced → Reverse Proxy: from
-   `https://<HEARTH_ALLOWED_HOSTS name>:8443` to `http://localhost:8000`. Use a certificate
-   from Control Panel → Security → Certificate; a self-signed one needs installing as
-   trusted on each device. The cookie is HTTPS-only, so signing in over plain HTTP does
-   nothing. That is deliberate.
-5. **Firewall.** Control Panel → Security → Firewall: allow Postgres's port from the
-   desktop only.
-6. **DSM settings.** Turn off QuickConnect, and turn off device analytics under Control
-   Panel → Info Center if it is on. Keep the `hearth` folder out of Cloud Sync and any
-   other cloud task. Rules 5 and 6 also cover where the data lives.
+3. **Start it.** The image is built on the Mac with `make pi-image` and copied over as a
+   file. It is never pushed to a registry. Then `sudo docker load -i <archive>` and
+   `sudo docker compose -f docker-compose.pi.yml up -d` start everything, and Hearth
+   applies migrations before it serves anything. **Moving existing data? Start
+   `postgres` alone and restore first** (below): once Hearth has migrated, `make restore`
+   refuses the database because it already holds tables.
+4. **HTTPS.** Caddy serves `https://<HEARTH_HOSTNAME>` with a certificate from its own
+   local CA: no ACME, nothing asked of the internet. Each device trusts the CA's root
+   once (docs/pi-setup.md, step 15). The cookie is HTTPS-only, so signing in over plain
+   HTTP does nothing. That is deliberate. The root can vouch for any name, so its folder
+   is root-only and never leaves the Pi.
+5. **Firewall** — see below. `ufw` alone would not do it.
 
 ### On the desktop
 
 - **LM Studio.** Developer → Server settings → **Serve on Local Network**.
-- **Windows Firewall.** Create an inbound rule allowing TCP 1234 from the NAS's address
+- **Windows Firewall.** Create an inbound rule allowing TCP 1234 from the Pi's address
   only. LM Studio has no login of its own.
-- **Give the desktop a DHCP reservation in the router.** Postgres and the firewall rules
-  above name its address.
+- **Give the desktop and the Pi DHCP reservations in the router.** Postgres and the
+  firewall rules on both machines name their addresses.
 - **The repository stays here** for development and measurement. Its `.env` points at the
-  NAS, and `make eval`, `make backup` and `make test` run from here against it:
+  Pi, and `make eval`, `make backup` and `make test` run from here against it:
 
   ```bash
-  INFRA_HOST=nas.local          # make up/down/logs then start nothing here
-  DATABASE_URL=postgresql+psycopg://hearth:<password>@<NAS address>:5432/hearth
-  DATABASE_URL_RO=postgresql+psycopg://hearth_ro:<password>@<NAS address>:5432/hearth
+  INFRA_HOST=hearth.local       # make up/down/logs then start nothing here
+  DATABASE_URL=postgresql+psycopg://hearth:<password>@<Pi address>:5432/hearth
+  DATABASE_URL_RO=postgresql+psycopg://hearth_ro:<password>@<Pi address>:5432/hearth
   ```
+
+### The firewall, and why ufw is not it
+
+Docker publishes a port by rewriting the packet's destination in the `nat` table and
+forwarding it to the container. The packet never reaches the `INPUT` chain, which is
+where `ufw` filters, so **a `ufw` rule does not protect a published port.** Docker leaves
+its owner one chain, `DOCKER-USER`, which every forwarded packet passes first.
+
+`docker/pi/firewall.sh` rewrites that chain: new connections arriving on the LAN
+interface may reach 443 and 80 from the home subnet and Postgres from the desktop alone,
+and every other new connection is dropped. Replies, and connections the containers make
+themselves, are untouched. It runs as `hearth-firewall.service`, before Docker, and
+Docker requires it: if the rules cannot be written, Docker does not start and nothing is
+published unrestricted. `ufw` still covers the Pi itself — SSH and mDNS from the LAN.
 
 ### Who may connect to Postgres
 
-The compose file sets `POSTGRES_HOST_AUTH_METHOD=reject`, so a new cluster refuses every
-TCP connection. On first start, `02-restrict-hba.sh` puts password-checked lines ahead of
-that rule for two addresses: the desktop (`HEARTH_CLIENT_IPS`) and the `hearth`
-container (`172.30.42.10`, fixed in the compose file).
+Two locks, independent of each other. The firewall is the first. The second is
+`pg_hba.conf`: the compose file sets `POSTGRES_HOST_AUTH_METHOD=reject`, so a new cluster
+refuses every TCP connection, and on first start `02-restrict-hba.sh` puts
+password-checked lines ahead of that rule for two addresses — the desktop
+(`HEARTH_CLIENT_IPS`) and the `hearth` container (`172.30.42.10`, fixed in the compose
+file).
 
 Both choices were forced by measurement, not taste:
 - **Closed by default.** An init script that cannot run does not stop the image's
@@ -479,15 +493,15 @@ Both choices were forced by measurement, not taste:
   machine *as the gateway*. It got in. Admitting the container's single address shut it
   out.
 
-Linux Docker normally keeps the real source address. If Synology's doesn't, the desktop
-is refused with `pg_hba.conf rejects connection for host "<address>"`, naming the
-address it saw. Adding that address admits whatever reaches the port, and the firewall
-rule becomes what restricts it. The script runs on an empty data folder only. To change
-the list later, edit `pg_hba.conf` in `NAS_PGDATA_DIR` and restart the container.
+Linux Docker normally keeps the real source address. If it doesn't, the desktop is
+refused with `pg_hba.conf rejects connection for host "<address>"`, naming the address
+it saw. The script runs on an empty data folder only. To change the list later, edit
+`pg_hba.conf` in `PI_PGDATA_DIR`, and `/etc/default/hearth-firewall`, and restart both.
 
 What still crosses the LAN unencrypted: Hearth's calls to LM Studio, which carry prompts
-and tool results, balances included, and the desktop's connections to Postgres.
-scram-sha-256 keeps the database password itself off the wire.
+and tool results, balances included; the desktop's connections to Postgres; and the
+nightly dumps on their way to the NAS over NFS. scram-sha-256 keeps the database password
+itself off the wire.
 
 ### Moving the data over
 
@@ -495,27 +509,31 @@ From the native cluster on the desktop, **before Hearth's container first starts
 
 ```bash
 make backup                                   # still pointed at the native cluster
-# on the NAS: sudo docker compose -f docker-compose.nas.yml up -d postgres
-# switch the desktop's .env to the NAS as above, then:
+# on the Pi: sudo docker compose -f docker-compose.pi.yml up -d postgres
+# switch the desktop's .env to the Pi as above, then:
 make restore DUMP=<that .dump file>           # creates the read-only role too
-# on the NAS: sudo docker load -i <archive from make nas-image>, then
-#             sudo docker compose -f docker-compose.nas.yml up -d
+# on the Pi: sudo docker load -i <archive from make pi-image>, then
+#            sudo docker compose -f docker-compose.pi.yml up -d
 ```
 
-The desktop's `DATABASE_URL_RO` password must be the NAS's `HEARTH_RO_PASSWORD`: the
-restore creates the role with the desktop's, and the container connects with the NAS's.
+The desktop's `DATABASE_URL_RO` password must be the Pi's `HEARTH_RO_PASSWORD`: the
+restore creates the role with the desktop's, and the container connects with the Pi's.
 
 Then check the account totals on the Data & imports screen against Fidelity's, as after
-the first import. Move the exports themselves into the NAS's `data/` folder.
+the first import. Move the exports themselves into the Pi's `data/` folder.
 
 ### Backups
 
-`docker exec hearth-hearth-1 python -m scripts.backup` writes to the NAS's `backups/`
-folder. Schedule it in DSM's Task Scheduler. A dump on the same NAS as the database is
-not a backup of it, so use Hyper Backup to take an encrypted copy somewhere else, or run
-`make backup` from the desktop as well, which keeps its own copies there. Btrfs snapshots
-of `hearth` are cheap, but a snapshot of a running cluster is only crash-consistent, so the
-dumps remain the backup.
+`hearth-backup.timer` runs nightly. It takes a dump with the existing
+`scripts.backup`, inside the container, which reads each dump back and keeps the newest 14
+on the SSD. Then it checks that the NAS's NFS export is really mounted at
+`/mnt/nas-hearth` — and fails if not, rather than copying into the empty folder beneath it
+and reading as success — and copies the dumps across with `rsync`. It never deletes on
+the NAS. A failed run shows in `systemctl --failed`; nothing sends a notification (rule
+6).
+
+NFS rather than SMB: the Synology share admits the Pi's address alone, and no NAS
+password is stored on the Pi. Hyper Backup can take the NAS's copies offsite.
 
 ## What the tools do
 

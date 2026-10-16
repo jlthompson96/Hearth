@@ -1,0 +1,29 @@
+# A nightly dump, kept on the Pi's SSD, then copied to the NAS over NFS.
+# Started by hearth-backup.timer. Install on the Pi:
+#
+#   sudo install -m 644 docker/pi/hearth-backup.service docker/pi/hearth-backup.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now hearth-backup.timer
+#   sudo systemctl start hearth-backup     # once by hand, to see it work
+#
+# Each step must succeed for the next to run, and a failure leaves the unit in
+# `systemctl --failed`. Nothing is sent anywhere to announce it (rule 6).
+#
+# - The dump is the existing script, inside the container: it reads each dump
+#   back before it counts, and keeps the newest 14 on the SSD.
+# - The mount is checked, not assumed. With the NAS unreachable, /mnt/nas-hearth
+#   is an empty folder on the SSD, and copying into it would read as success.
+# - rsync never deletes on the NAS. A wiped SSD would otherwise make the next
+#   run delete every copy but one. Prune the NAS by hand or with Hyper Backup's
+#   rotation; a dump is small.
+
+[Unit]
+Description=Hearth: back up the database and copy it to the NAS
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec hearth-hearth-1 python -m scripts.backup
+ExecStart=/usr/bin/mountpoint -q /mnt/nas-hearth
+ExecStart=/usr/bin/rsync -rt --include=hearth-*.dump --exclude=* /srv/hearth/backups/ /mnt/nas-hearth/

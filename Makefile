@@ -22,7 +22,7 @@ export
 
 API_PORT ?= 8000
 
-.PHONY: dev migrate seed unseed test eval lint fmt install up down logs backup restore grant-ro export load-export start freeze clean hooks password nas-image
+.PHONY: dev migrate seed unseed test eval lint fmt install up down logs backup restore grant-ro export load-export start freeze clean hooks password pi-image
 
 ## dev — docker compose up + backend + frontend
 dev: install up
@@ -98,8 +98,8 @@ web/node_modules: web/package.json
 	touch web/node_modules
 
 # Three ways to get a Postgres. Setting INFRA_HOST in .env says Postgres and
-# SearXNG run on another machine on the LAN — the NAS, under
-# docker-compose.nas.yml — and are started there, not from here. Setting PGDATA
+# SearXNG run on another machine on the LAN — the Pi, under
+# docker-compose.pi.yml — and are started there, not from here. Setting PGDATA
 # selects a native cluster driven by pg_ctl; leaving both unset keeps docker
 # compose. The GPU host has no
 # working Docker — its WSL2 backend needs a Windows feature that is off, and the
@@ -118,7 +118,7 @@ web/node_modules: web/package.json
 ## up — infrastructure only; waits for Postgres to accept connections
 up:
 ifdef INFRA_HOST
-	@echo "Postgres and SearXNG run on $(INFRA_HOST) — start them in Container Manager there."
+	@echo "Postgres and SearXNG run on $(INFRA_HOST) — start them there (docs/pi-setup.md)."
 else ifdef PGDATA
 	@"$(PGBIN)/pg_ctl" -D "$(PGDATA)" status >/dev/null 2>&1 || powershell -NoProfile -Command \
 		"Start-Process -FilePath '$(PGBIN)/pg_ctl.exe' -WindowStyle Hidden -ArgumentList \
@@ -131,7 +131,7 @@ endif
 
 down:
 ifdef INFRA_HOST
-	@echo "Postgres and SearXNG run on $(INFRA_HOST) — stop them in Container Manager there."
+	@echo "Postgres and SearXNG run on $(INFRA_HOST) — stop them there with docker compose."
 else ifdef PGDATA
 	@"$(PGBIN)/pg_ctl" -D "$(PGDATA)" -m fast stop </dev/null || true
 else
@@ -140,7 +140,7 @@ endif
 
 logs:
 ifdef INFRA_HOST
-	@echo "Postgres and SearXNG run on $(INFRA_HOST) — their logs are in Container Manager there."
+	@echo "Postgres and SearXNG run on $(INFRA_HOST) — read them there with docker compose logs."
 else ifdef PGDATA
 	@tail -f "$(PGDATA)/server.log"
 else
@@ -156,24 +156,25 @@ restore: install
 	@test -n "$(DUMP)" || { echo "Name the dump: make restore DUMP=<file> [DB=<name>]"; exit 1; }
 	$(PY) -m scripts.restore "$(DUMP)" $(if $(DB),--database "$(DB)")
 
-## nas-image — the hearth image for the NAS (amd64), as an archive to copy over
+## pi-image — the hearth image for the Pi (arm64), as an archive to copy over
 #
-# Built here rather than on the NAS: the DS423+'s J4125 takes a quarter of an
-# hour over the UI build, and Node never needs to be on it. Moved as a file, not
-# through a registry, so the image is never published and the NAS holds no
-# registry credentials. The archive is named after the commit, with -dirty when
-# the tree has uncommitted changes — those are in the image too. The image also
-# carries the commit as a label: `docker inspect hearth:local` on the NAS says
-# what is running. See docs/nas-setup.md, step 12.
-NAS_IMAGE_REV = $(shell git rev-parse --short HEAD)$(shell git diff --quiet HEAD || echo -dirty)
+# The Pi 5 is arm64, like the Mac, so this builds natively — no emulation. The
+# Pi can also build it itself (`docker compose -f docker-compose.pi.yml build`),
+# but Node and the UI build then run on it. Moved as a file, not through a
+# registry, so the image is never published and the Pi holds no registry
+# credentials. The archive is named after the commit, with -dirty when the tree
+# has uncommitted changes — those are in the image too. The image also carries
+# the commit as a label: `docker inspect hearth:local` on the Pi says what is
+# running. See docs/pi-setup.md, step 14.
+PI_IMAGE_REV = $(shell git rev-parse --short HEAD)$(shell git diff --quiet HEAD || echo -dirty)
 
-nas-image:
-	docker buildx build --platform linux/amd64 \
-		--label org.opencontainers.image.revision=$(NAS_IMAGE_REV) \
-		-t hearth:local -t hearth:$(NAS_IMAGE_REV) --load .
+pi-image:
+	docker buildx build --platform linux/arm64 \
+		--label org.opencontainers.image.revision=$(PI_IMAGE_REV) \
+		-t hearth:local -t hearth:$(PI_IMAGE_REV) --load .
 	@mkdir -p dist
-	docker save hearth:local hearth:$(NAS_IMAGE_REV) | gzip > dist/hearth-$(NAS_IMAGE_REV)-amd64.tar.gz
-	@echo "Wrote dist/hearth-$(NAS_IMAGE_REV)-amd64.tar.gz — copy it to the NAS and load it (docs/nas-setup.md, step 12)."
+	docker save hearth:local hearth:$(PI_IMAGE_REV) | gzip > dist/hearth-$(PI_IMAGE_REV)-arm64.tar.gz
+	@echo "Wrote dist/hearth-$(PI_IMAGE_REV)-arm64.tar.gz — copy it to the Pi and load it (docs/pi-setup.md, step 14)."
 
 ## password — set the owner's password; prints the line for .env (api/auth.py)
 password: install
