@@ -56,12 +56,14 @@ is measured: 60/60 on a 20-case labelled set, every case unanimous across three 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/house-light.svg">
-    <img src="docs/assets/house.svg" alt="What leaves the house: everything runs on this machine; only Errand's validated, audited search queries reach SearXNG" width="100%">
+    <img src="docs/assets/house.svg" alt="What leaves the house: everything stays on the home network; only Errand's validated, audited search queries reach SearXNG" width="100%">
   </picture>
 </p>
 
-Everything below runs on one machine. The only planned exception is Errand's web search
-(Phase 9), which will pass an egress filter and be logged.
+Everything below stays on the local network. In development it is one machine; on the
+owner's setup it is three — LM Studio on the desktop, the rest on a Raspberry Pi, backups
+on the NAS (see [Running Hearth on the Pi](#running-hearth-on-the-pi)). The one thing that
+reaches past the LAN is Errand's web search, which passes an egress filter and is logged.
 
 ```mermaid
 flowchart LR
@@ -76,7 +78,7 @@ flowchart LR
     chatRoute["/api/chat — SSE"]
     threadsRoute["/api/threads"]
     dataRoutes["/api/imports<br/>/api/accounts"]
-    logRoutes["/api/model-log<br/>/api/settings"]
+    logRoutes["/api/model-log<br/>/api/settings<br/>/api/status"]
   end
 
   subgraph answering["Answering a turn"]
@@ -202,12 +204,12 @@ text is not in this table, because it is not implemented.
 | **5. Nothing leaves the machine** | Every configured address — model, database, search — must be loopback, private or LAN, or startup fails (`config.local_only`). The one exception, Errand's search, passes `validate_search_query()` first — no amounts, no number of four or more digits, none of `SEARCH_BLOCKED_TERMS` — and every attempt, sent or refused, is written to `search_audit`. A refused search is a `refused` turn and makes no request. Errand is offered to the router only while SearXNG answers | `tests/test_config.py`, `tests/test_egress.py`, `tests/test_errand.py`, `tests/test_steward.py` |
 | **6. No telemetry** | The model connection refuses to build while any tracing variable is on | `tests/test_llm_connection.py` |
 | **7. Iteration caps** | The Steward's hop cap is a conditional edge (6); the specialist loop stops at 4 model calls, 4,000 tokens a call — the last, tool-free call included — and 180 seconds a turn, each set from a probe of the heaviest questions; a routing call stops at 256 tokens and 30 seconds. An answer cut off at the token limit is taken back, not saved as a shorter one | `tests/test_steward.py`, `tests/test_guardrails.py`, `tests/test_chat_route.py`, `tests/test_context_window.py` |
-| **The Model log stays on this machine** | Every prompt and reply — balances included — is kept in Postgres, keyed to its question and deleted with its thread, and after 90 days by default. `make export` copies it, with every other table, to files on this machine outside the repository; nothing sends it anywhere. No tracing service: Langfuse is not wired (it would need Docker here, and its cloud is ruled out by rules 5 and 6) | `tests/test_model_log.py`, `tests/test_preferences.py` |
+| **The Model log stays at home** | Every prompt and reply — balances included — is kept in Postgres, keyed to its question and deleted with its thread, and after 90 days by default. `make export` copies it, with every other table, to files on the LAN outside the repository; nothing sends it anywhere. No tracing service: Langfuse is not wired (self-hosted, it is four more services for one user; its cloud is ruled out by rules 5 and 6) | `tests/test_model_log.py`, `tests/test_preferences.py` |
 | **The chat model fits the card** | `model_choice.py`: a model is offered only if it is a chat model, was trained for tool use, is no larger than 6 GiB (CLAUDE.md's ~8B at Q4, with room for the KV cache and embeddings), and can switch reasoning off. A switch loads it at 8,192 tokens before unloading the old one, so a failed load changes nothing | `tests/test_model_choice.py` (a fake LM Studio records every load and unload) |
 | **A turn runs at the window its budgets assume** | `model_choice.window_problem()`, before routing and again in the agent loop, believed for a minute: the chat model must be loaded at 8,192 tokens. One not loaded is loaded at that length; one loaded only at another length refuses the turn with a pointer to the Settings reload, rather than unloading an instance behind anyone's back. A step that fills 90% of the window says so in the Model log. A stored model choice LM Studio no longer lists falls back to `.env`'s at startup | `tests/test_context_window.py` |
 | **No setting loosens a guardrail** | `preferences.py`: three preferences, each a fixed list of values — answer length and two retention periods. The hop cap, step cap, follow-up window, pre-flight check and read-only role are shown on the Settings screen locked, and `.env` is never written from a page | `tests/test_preferences.py` |
 | **Real data stays out of the repo** | `HEARTH_DATA_DIR` inside the repository is refused; the evals run on their own fixture database, so no real figure reaches a committed result file | `tests/test_datadir.py`, `evals/conftest.py` |
-| **Only this machine's own pages can read the API** | `api/hosts.py`: a request whose Host header does not name this machine — `localhost`, `127.0.0.1` or `::1` — or a name listed in `HEARTH_ALLOWED_HOSTS` is refused before any route runs. Listening on 127.0.0.1 keeps other machines out but not other web pages: one that re-points its own domain at 127.0.0.1 (DNS rebinding) could otherwise read the thread history and the Model log as its own origin | `tests/test_hosts.py`, `tests/test_auth.py` |
+| **Only Hearth's own pages can read the API** | `api/hosts.py`: a request whose Host header does not name this machine — `localhost`, `127.0.0.1` or `::1` — or a name listed in `HEARTH_ALLOWED_HOSTS` is refused before any route runs. Listening on 127.0.0.1 keeps other machines out but not other web pages: one that re-points its own domain at 127.0.0.1 (DNS rebinding) could otherwise read the thread history and the Model log as its own origin | `tests/test_hosts.py`, `tests/test_auth.py` |
 | **Nothing on the network without a password** | `config.py` refuses to start with `HEARTH_ALLOWED_HOSTS` set and no `HEARTH_PASSWORD_HASH`. With one set, `api/auth.py` refuses every `/api` route, and the API description, without a signed session cookie (`HttpOnly`, `SameSite=Strict`, `Secure`). Guessing is throttled. The host is checked first, so a rebinding page learns nothing | `tests/test_auth.py`: every route, read from the app's own schema. 30 tests fail with the gate removed |
 | **Only the desktop reaches Postgres; only the LAN reaches Hearth** (on the Pi) | Two independent locks. `docker/pi/firewall.sh`, in Docker's `DOCKER-USER` chain because `ufw` never sees a published port: 443 and 80 from the home subnet, Postgres from the desktop, every other new connection dropped. Docker will not start without it. Then `pg_hba.conf`, closed by default (`POSTGRES_HOST_AUTH_METHOD=reject`) and opened to the desktop and the `hearth` container's one address | By hand on the Pi — it needs Linux: `nc -vz <pi-ip> 5432` from an unlisted machine times out, and the `restricted to` log line (docs/pi-setup.md, steps 10 and 20). `shellcheck` on the script |
 
@@ -236,19 +238,23 @@ measurement found, is in [docs/plan.md](docs/plan.md).
 | 6 | Steward and routing | Done | Routing ≥ 90% → **60/60**; a delegation loop stops at 6 hops |
 | 7 | Eval harness | Done | A prompt edit moves a number → caveat cases 3/3 → 0/3 → 3/3; baseline **57/61, 173/183** with follow-ups; latest **69/73** (`c1ad567`) — full runs vary, see plan |
 | 8 | Thread history and follow-ups | Done | Last week's thread found by a word you remember → found by "squat" and by "squatting"; "yes" to an offer is understood |
-| 9 | Errand and egress (web search) | **Built; waiting on SearXNG** — it needs Docker or a native install. Until it answers, the router is never offered Errand | A prompt engineered to leak a balance into a search raises `EgressViolation` → refused, audited, nothing sent (through the graph; end to end awaits SearXNG) |
-| 10 | RAG over documents | **Blocked** — pgvector needs an MSVC build | Retrieval traceable per answer; context stays within budget |
+| 9 | Errand and egress (web search) | **Built; SearXNG now answers on the Pi.** The exit test has not yet been run against it. While SearXNG does not answer, the router is never offered Errand | A prompt engineered to leak a balance into a search raises `EgressViolation` → refused, audited, nothing sent (through the graph; end to end awaits SearXNG) |
+| 10 | RAG over documents | **Unblocked, not started** — pgvector ships in the Pi's Postgres image | Retrieval traceable per answer; context stays within budget |
 | 11 | Forge (training) | Done over the fixture; real fitness data source open | Refusal path tested → pre-flight check now runs before routing, on every question |
 | 12 | MCP connections | Not started | Tool-schema cost visible and under a ceiling; no remote server |
 
 Open, in the order they matter:
 
-1. **Fitness data source** — an app export, or manual entry (Phase 11 runs on the fixture).
-2. **SearXNG without Docker** (Phase 9) and **pgvector on Windows** (Phase 10).
+1. **Phase 9's exit test** against the SearXNG now running on the Pi.
+2. **Phase 10, RAG** — pgvector is there on the Pi; the work has not started.
+
+Answered: the fitness data source is manual entry plus the body-weight history CSV, in
+pounds (docs/plan.md, Phase 11).
 
 Cut deliberately: voice, a third agent, proactive alerts, multi-model routing and
 transaction-level ingestion — each for a reason the plan records. Built from the backlog:
-the **Model log** and **Settings** screens. Langfuse is blocked on Docker, like SearXNG.
+the **Model log** and **Settings** screens. Langfuse stays out: four more services beside the model for one user is the cost that
+kept it out at the start, and the Model log covers the trace view.
 Backlog, unscheduled: a morning digest, and CSV and chart export.
 
 ## Prerequisites
@@ -503,9 +509,15 @@ and tool results, balances included; the desktop's connections to Postgres; and 
 nightly dumps on their way to the NAS over NFS. scram-sha-256 keeps the database password
 itself off the wire.
 
-### Moving the data over
+### Moving the data over — or starting fresh
 
-From the native cluster on the desktop, **before Hearth's container first starts**:
+**Starting fresh** needs none of this: skip the restore, and Hearth builds an empty
+database on its first start, read-only role included. Then create your accounts on the
+Manual entry screen, put the exports in the Pi's `data/` folder and import them. Never
+`make seed` on the Pi — it is the invented fixture.
+
+**Moving existing data**, from the native cluster on the desktop, **before Hearth's
+container first starts**:
 
 ```bash
 make backup                                   # still pointed at the native cluster
@@ -655,6 +667,24 @@ model, endpoint, caps, the follow-up window, the read-only role — read-only, w
 on everything code enforces. `.env` is not edited from the page: it is read once at
 startup, and a page that edited it would have to restart the server or show values that
 were not in effect.
+
+### The two dots at the foot of the sidebar
+
+**Backend** and **Model** each have a dot, because they fail separately: on the Pi,
+Hearth's backend can be up while the desktop running LM Studio is off. Hover over one (or
+focus it, or tap it on a phone) to see each part it depends on — passed (✓), failed (✗),
+or not checked because something before it failed (–):
+
+| Line | Parts checked | Dot |
+|---|---|---|
+| Backend | Hearth server (`/health`) · Database (Postgres, as the read-only role) · Web search (SearXNG's `/healthz`) | Green; amber when only web search is down ("web search off" — everything else works); red when the server or database is |
+| Model | LM Studio answers · the chat model is in it · loaded at 8,192 tokens | Green when ready, or idle ("loads when asked" — the first question loads it); red when unreachable, missing, or loaded at the wrong length |
+
+Both are asked again every 30 seconds and whenever the window regains focus.
+`/api/status/backend` and `/api/status/model` answer them, behind the sign-in. `/health`
+stays dependency-free, so it still answers when everything behind it is down. None of it
+sends anything past the LAN: SearXNG is asked at `/healthz`, never with a search, and
+nothing is loaded into LM Studio to check it.
 
 ## Running the model
 
@@ -834,16 +864,15 @@ cd web && npm run gen:types
 ## Layout
 
 ```
-api/          FastAPI app. Phase 0 serves /health.
+api/          FastAPI app: /health, the sign-in, every screen's routes, /api/status.
 config.py     Environment configuration, split so the API boots without a model server.
 steward/      The orchestrator. Routes each turn to a specialist.      (Phase 6)
 agents/       Tally (finance, Phase 5) and Forge (fitness, Phase 11).
-tools/        finance.py and fitness.py — every figure an agent reports.
+tools/        finance.py and fitness.py — every figure an agent reports; errand.py, web search.
 ingest/       CSV import and manual entry: the only writes of financial data. (Phase 2)
 history/      Stored conversations: search, titles, retention, the model log. (Phase 8)
 modellog.py   What a Model log entry holds, and the request as it is sent.
 preferences.py What the Settings screen can change; read where used, no restart.
-              Errand, the one thing that leaves the house, lands in Phase 9.
 prompts/      Agent prompts as version-controlled Markdown, never inline literals.
 db/           Schema and shared column types. NUMERIC throughout.
 migrations/   Alembic. Tables, the snapshot_coverage view, the read-only role.
@@ -851,7 +880,7 @@ scripts/      seed.py — the golden fixture. Invented figures only.
 evals/        Behavioural case file and recorded pass rates.           (Phase 7)
 tests/        Pytest. Tests come before agent code in the data and tool layers.
 web/          React + TypeScript + Vite.
-docker/       Postgres init and SearXNG configuration.
+docker/       Postgres init, SearXNG, Caddy, and the Pi's firewall and backup units.
 ```
 
 ## Data
@@ -911,7 +940,7 @@ answer records the model that gave it and a hash of the prompt behind it, so it 
 matched to the eval runs that measured that prompt long after its Model log entries
 have expired. There are no live financial connections, and there will not be.
 
-## What leaves the machine
+## What leaves the local network
 
 Nothing, with one exception: Errand's search queries reach a self-hosted SearXNG instance,
 which then queries the public web. Every such query passes `validate_search_query()` and is
@@ -919,5 +948,5 @@ logged to the `search_audit` table, with a view in the UI (Phase 9).
 
 There is no third-party telemetry anywhere — no analytics, no error reporting,
 `LANGCHAIN_TRACING_V2=false`. The Model log is the local answer to a tracing service: it
-keeps every prompt and reply in Postgres on this machine; `make export` writes it to
-files on the same machine, and nothing sends it anywhere.
+keeps every prompt and reply in Postgres on the LAN; `make export` writes it to files
+there too, and nothing sends it anywhere.

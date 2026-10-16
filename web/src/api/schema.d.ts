@@ -421,6 +421,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/status/model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the chat model can answer */
+        get: operations["get_model_status_api_status_model_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/backend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the backend depends on */
+        get: operations["get_backend_status_api_status_backend_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -473,6 +507,15 @@ export interface components {
          * @enum {string}
          */
         Agent: "tally" | "forge";
+        /**
+         * BackendStatus
+         * @description The parts behind the backend. The backend itself answering is what
+         *     /health says, and the UI puts that first.
+         */
+        BackendStatus: {
+            /** Checks */
+            checks: components["schemas"]["Check"][];
+        };
         /** Batch */
         Batch: {
             /**
@@ -535,6 +578,15 @@ export interface components {
             detail: "brief" | "normal" | "detailed";
             /** Rerun Of */
             rerun_of?: string | null;
+        };
+        /** Check */
+        Check: {
+            /** Name */
+            name: string;
+            /** Ok */
+            ok: boolean | null;
+            /** Detail */
+            detail: string;
         };
         /** ConfigItem */
         ConfigItem: {
@@ -714,6 +766,20 @@ export interface components {
             refused: string | null;
             /** Measured */
             measured: boolean;
+        };
+        /** ModelStatus */
+        ModelStatus: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "idle" | "wrong_length" | "missing" | "unreachable";
+            /** Model */
+            model: string;
+            /** Detail */
+            detail: string;
+            /** Checks */
+            checks: components["schemas"]["Check"][];
         };
         /** ModelsOut */
         ModelsOut: {
@@ -2128,6 +2194,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Refusal"];
+                };
+            };
+        };
+    };
+    get_model_status_api_status_model_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelStatus"];
+                };
+            };
+        };
+    };
+    get_backend_status_api_status_backend_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackendStatus"];
                 };
             };
         };

@@ -33,6 +33,7 @@ from api.routes import (
     search_audit,
     session,
     settings,
+    status,
     threads,
     training,
 )
@@ -88,6 +89,7 @@ app.include_router(training.router)
 app.include_router(model_log.router)
 app.include_router(search_audit.router)
 app.include_router(settings.router)
+app.include_router(status.router)
 
 # The built UI, when this runs as the Pi's container (Dockerfile): the page and
 # the API share an origin there as they do through Vite's proxy in development,
